@@ -1,0 +1,86 @@
+# PromSketch-Dropin Configuration Example
+
+# Server settings
+server:
+  listen_address: ":9100"
+  read_timeout: 30s
+  write_timeout: 30s
+  log_level: info  # debug, info, warn, error
+  log_format: logfmt  # logfmt or json
+
+# Ingestion settings
+ingestion:
+  # Remote write receiver - accepts Prometheus remote write protocol
+  remote_write:
+    enabled: true
+    listen_address: ":9100"
+    max_sample_size: 5000000
+
+  # Built-in scrape manager - scrapes targets directly
+  scrape:
+    enabled: false
+    config_file: "/etc/promsketch/scrape_config.yaml"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+# Backend storage system (for forwarding raw samples and fallback queries)
+backend:
+  type: victoriametrics  # victoriametrics, prometheus, influxdb, clickhouse
+  url: http://victoria-metrics:8428
+  remote_write_url: http://victoria-metrics:8428/api/v1/write
+  timeout: 30s
+  max_retries: 3
+  batch_size: 1000
+  flush_interval: 5s
+
+  # Optional authentication
+  # basic_auth:
+  #   username: admin
+  #   password: secret
+  # bearer_token: "your-token-here"
+  # bearer_token_file: "/path/to/token/file"
+
+# PromSketch configuration
+sketch:
+  # Number of PromSketch instance partitions (for consistent hashing)
+  num_partitions: 16
+
+  # Memory limit for all sketch instances (e.g., "4GB", "512MB")
+  memory_limit: "2GB"
+
+  # Default parameters for all sketch targets
+  defaults:
+    eh_params:
+      window_size: 1800  # 30 minutes in seconds
+      k: 50              # Exponential Histogram K parameter
+      kll_k: 256         # KLL sketch K parameter for quantile queries
+
+  # Define which time series should have sketch instances created
+  targets:
+    # HTTP request duration metrics
+    - match: '{__name__=~"http_request_duration_.*"}'
+      eh_params:
+        window_size: 3600  # 1 hour
+        k: 50
+        kll_k: 256
+
+    # Node exporter CPU metrics
+    - match: '{__name__="node_cpu_seconds_total"}'
+      eh_params:
+        window_size: 7200  # 2 hours
+
+    # API server metrics
+    - match: '{job="apiserver"}'
+      eh_params:
+        window_size: 1800
+
+    # Catch-all for testing (use with caution in production)
+    # - match: '*'
+
+# Query API settings
+query:
+  listen_address: ":9100"
+  timeout: 30s
+  max_concurrency: 20
+  enable_fallback: true
+  fallback_timeout: 60s
