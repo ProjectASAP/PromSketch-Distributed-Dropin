@@ -34,21 +34,26 @@ func NewCircuitBreaker(failureThreshold int, timeout time.Duration) *CircuitBrea
 	}
 }
 
-// Allow returns true if the request should be allowed through
+// Allow returns true if the request should be allowed through.
+// When the circuit is open and the timeout has elapsed, it atomically
+// transitions to half-open and allows exactly one probe request.
 func (cb *CircuitBreaker) Allow() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	switch cb.state {
 	case StateClosed:
 		return true
 	case StateOpen:
 		if time.Since(cb.lastFailTime) > cb.timeout {
-			return true // Allow one request to test recovery
+			// Atomically transition to half-open; only one caller sees this
+			cb.state = StateHalfOpen
+			cb.successes = 0
+			return true
 		}
 		return false
 	case StateHalfOpen:
-		return true // Allow requests to test recovery
+		return true
 	}
 	return false
 }
@@ -61,17 +66,12 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	cb.failures = 0
 	cb.successes++
 
-	switch cb.state {
-	case StateHalfOpen:
+	if cb.state == StateHalfOpen {
 		// After a few successes in half-open, close the circuit
 		if cb.successes >= 2 {
 			cb.state = StateClosed
 			cb.successes = 0
 		}
-	case StateOpen:
-		// Success after timeout means we're recovering
-		cb.state = StateHalfOpen
-		cb.successes = 1
 	}
 }
 

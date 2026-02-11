@@ -4,7 +4,7 @@ datasources:
   - name: PromSketch-Dropin
     type: prometheus
     access: proxy
-    url: http://promsketch-dropin:9100
+    url: http://pskquery:8480
     isDefault: true
     jsonData:
       httpMethod: POST

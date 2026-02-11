@@ -17,6 +17,7 @@ import (
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	pskconfig "github.com/promsketch/promsketch-dropin/internal/pskquery/config"
 	"github.com/promsketch/promsketch-dropin/internal/pskquery/merger"
+	"github.com/promsketch/promsketch-dropin/internal/query/api"
 	"github.com/promsketch/promsketch-dropin/internal/query/capabilities"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
 )
@@ -81,6 +82,7 @@ func main() {
 		capRegistry,
 		queryParser,
 		cfg.Query.QueryTimeout,
+		cfg.Query.MaxConcurrentQueries,
 	)
 
 	// Setup HTTP server
@@ -170,6 +172,12 @@ func main() {
 			"component": "pskquery",
 		})
 	})
+
+	// Metadata endpoints (proxied to backend for Grafana autocomplete)
+	metadataAPI := api.NewMetadataAPI(cfg.Backend.URL)
+	mux.HandleFunc("/api/v1/series", metadataAPI.ServeHTTP)
+	mux.HandleFunc("/api/v1/labels", metadataAPI.ServeHTTP)
+	mux.HandleFunc("/api/v1/label/", metadataAPI.ServeHTTP)
 
 	// Metrics endpoint
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {

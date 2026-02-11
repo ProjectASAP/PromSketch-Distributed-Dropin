@@ -17,6 +17,9 @@ type QueryInfo struct {
 	// Function name (if it's a function call)
 	FunctionName string
 
+	// Numeric arguments to the function (e.g., quantile value for quantile_over_time)
+	FuncArgs []float64
+
 	// Metric selector (label matchers)
 	MetricName string
 	LabelMatchers []*LabelMatcher
@@ -78,17 +81,14 @@ func (p *Parser) extractInfo(expr metricsql.Expr, info *QueryInfo) {
 	case *metricsql.FuncExpr:
 		info.FunctionName = e.Name
 
-		// Check if it's a rollup function (e.g., avg_over_time, sum_over_time)
-		// quantile_over_time has the rollup expr as the second argument
+		// Extract numeric arguments (e.g., quantile value from quantile_over_time(0.99, ...))
 		var rollupExpr *metricsql.RollupExpr
-		if len(e.Args) > 0 {
-			if re, ok := e.Args[0].(*metricsql.RollupExpr); ok {
-				rollupExpr = re
-			} else if len(e.Args) > 1 {
-				// Check second arg for functions like quantile_over_time(0.95, metric[5m])
-				if re, ok := e.Args[1].(*metricsql.RollupExpr); ok {
-					rollupExpr = re
-				}
+		for _, arg := range e.Args {
+			switch a := arg.(type) {
+			case *metricsql.NumberExpr:
+				info.FuncArgs = append(info.FuncArgs, a.N)
+			case *metricsql.RollupExpr:
+				rollupExpr = a
 			}
 		}
 
@@ -159,6 +159,15 @@ func (p *Parser) extractMetricInfo(me *metricsql.MetricExpr, info *QueryInfo) {
 
 		info.LabelMatchers = append(info.LabelMatchers, matcher)
 	}
+}
+
+// QuantileValue returns the quantile parameter for quantile_over_time queries.
+// Returns 0.5 (median) as default if not specified.
+func (qi *QueryInfo) QuantileValue() float64 {
+	if len(qi.FuncArgs) > 0 {
+		return qi.FuncArgs[0]
+	}
+	return 0.5
 }
 
 // IsRangeQuery checks if the query is a range query (over time)

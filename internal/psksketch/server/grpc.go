@@ -55,10 +55,23 @@ func (s *SketchServer) Start() error {
 	return s.server.Serve(lis)
 }
 
-// Stop gracefully stops the gRPC server
+// Stop gracefully stops the gRPC server, draining in-flight RPCs
+// up to 10 seconds before forcing a hard stop.
 func (s *SketchServer) Stop() {
-	if s.server != nil {
+	if s.server == nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
 		s.server.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Drained cleanly
+	case <-time.After(10 * time.Second):
+		log.Printf("gRPC graceful drain timed out, forcing stop")
+		s.server.Stop()
 	}
 }
 

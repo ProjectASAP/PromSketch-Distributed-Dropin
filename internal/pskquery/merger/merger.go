@@ -48,6 +48,7 @@ type Merger struct {
 	parser       *parser.Parser
 	queryTimeout time.Duration
 	metrics      MergerMetrics
+	querySem     chan struct{} // semaphore for MaxConcurrentQueries
 }
 
 // NewMerger creates a new query merger
@@ -57,18 +58,31 @@ func NewMerger(
 	capabilities *capabilities.Registry,
 	parser *parser.Parser,
 	queryTimeout time.Duration,
+	maxConcurrentQueries int,
 ) *Merger {
+	if maxConcurrentQueries <= 0 {
+		maxConcurrentQueries = 100
+	}
 	return &Merger{
 		pool:         pool,
 		backend:      backend,
 		capabilities: capabilities,
 		parser:       parser,
 		queryTimeout: queryTimeout,
+		querySem:     make(chan struct{}, maxConcurrentQueries),
 	}
 }
 
 // Query executes an instant query by fanning out to all psksketch nodes
 func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryResult, error) {
+	// Acquire semaphore
+	select {
+	case m.querySem <- struct{}{}:
+		defer func() { <-m.querySem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	startTime := time.Now()
 
 	// Parse the query
@@ -100,13 +114,18 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	lbls := buildLabelsFromQuery(queryInfo)
 	pbLabels := promLabelsToPBLabels(lbls)
 
-	// Extract quantile argument
+	// Extract function arguments (e.g., quantile value)
 	otherArgs := 0.0
 	if queryInfo.FunctionName == "quantile_over_time" {
-		otherArgs = 0.5 // Default to median
+		otherArgs = queryInfo.QuantileValue()
 	}
 
 	tsMilli := ts.UnixMilli()
+	// Use the query's range window for MinTime (e.g., avg_over_time(m[5m]) → [T-5m, T])
+	minTimeMilli := tsMilli - queryInfo.Range
+	if minTimeMilli >= tsMilli {
+		minTimeMilli = tsMilli // no range specified, use point query
+	}
 
 	// Fan-out to all psksketch nodes in parallel
 	clients := m.pool.AllClients()
@@ -127,7 +146,7 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 				FuncName:  queryInfo.FunctionName,
 				Labels:    pbLabels,
 				OtherArgs: otherArgs,
-				MinTime:   tsMilli,
+				MinTime:   minTimeMilli,
 				MaxTime:   tsMilli,
 				CurTime:   time.Now().UnixMilli(),
 			}
@@ -194,6 +213,14 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 
 // QueryRange executes a range query by fanning out to all psksketch nodes
 func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (*QueryResult, error) {
+	// Acquire semaphore
+	select {
+	case m.querySem <- struct{}{}:
+		defer func() { <-m.querySem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	startExec := time.Now()
 
 	queryInfo, err := m.parser.Parse(query)
@@ -224,7 +251,7 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 
 	otherArgs := 0.0
 	if queryInfo.FunctionName == "quantile_over_time" {
-		otherArgs = 0.5
+		otherArgs = queryInfo.QuantileValue()
 	}
 
 	// For range queries, evaluate at each step point
@@ -244,12 +271,17 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 
 		for _, c := range clients {
 			go func(client pb.SketchServiceClient) {
+				evalMaxTime := ts.UnixMilli()
+				evalMinTime := evalMaxTime - queryInfo.Range
+				if evalMinTime >= evalMaxTime {
+					evalMinTime = evalMaxTime
+				}
 				req := &pb.EvalRequest{
 					FuncName:  queryInfo.FunctionName,
 					Labels:    pbLabels,
 					OtherArgs: otherArgs,
-					MinTime:   ts.UnixMilli(),
-					MaxTime:   ts.UnixMilli(),
+					MinTime:   evalMinTime,
+					MaxTime:   evalMaxTime,
 					CurTime:   time.Now().UnixMilli(),
 				}
 				resp, err := client.Eval(queryCtx, req)

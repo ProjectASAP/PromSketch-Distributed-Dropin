@@ -2,7 +2,7 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Build output directory
-/bin/
+./bin/
 
 # Named binaries (in case built outside bin/)
 /promsketch-dropin

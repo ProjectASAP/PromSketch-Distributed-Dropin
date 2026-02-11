@@ -52,6 +52,10 @@ func main() {
 	log.Printf("  Total partitions: %d", cfg.Storage.NumPartitions)
 	log.Printf("  Sketch targets: %d", len(cfg.Storage.Targets))
 
+	// Pass partition ownership from node config to storage config
+	cfg.Storage.PartitionStart = cfg.Node.PartitionStart
+	cfg.Storage.PartitionEnd = cfg.Node.PartitionEnd
+
 	// Initialize storage layer (reuse existing storage)
 	stor, err := storage.NewStorage(&cfg.Storage)
 	if err != nil {

@@ -169,6 +169,51 @@ func TestParser_AggregateDetection(t *testing.T) {
 	}
 }
 
+func TestParser_QuantileExtraction(t *testing.T) {
+	p := NewParser()
+
+	tests := []struct {
+		name             string
+		query            string
+		expectedQuantile float64
+	}{
+		{
+			name:             "quantile_0.99",
+			query:            `quantile_over_time(0.99, http_duration_seconds[5m])`,
+			expectedQuantile: 0.99,
+		},
+		{
+			name:             "quantile_0.5",
+			query:            `quantile_over_time(0.5, http_duration_seconds[5m])`,
+			expectedQuantile: 0.5,
+		},
+		{
+			name:             "quantile_0.95",
+			query:            `quantile_over_time(0.95, node_cpu_seconds_total{job="node"}[10m])`,
+			expectedQuantile: 0.95,
+		},
+		{
+			name:             "non_quantile_no_args",
+			query:            `avg_over_time(http_requests_total[5m])`,
+			expectedQuantile: 0.5, // default from QuantileValue()
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, err := p.Parse(tt.query)
+			if err != nil {
+				t.Fatalf("Failed to parse query: %v", err)
+			}
+
+			got := info.QuantileValue()
+			if got != tt.expectedQuantile {
+				t.Errorf("Expected QuantileValue()=%v, got %v", tt.expectedQuantile, got)
+			}
+		})
+	}
+}
+
 func TestParser_InvalidQueries(t *testing.T) {
 	p := NewParser()
 

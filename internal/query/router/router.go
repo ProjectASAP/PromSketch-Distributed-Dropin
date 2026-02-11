@@ -80,8 +80,15 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 	if capability.CanHandleWithSketches {
 		r.metrics.SketchQueries++
 
+		// Use the query's range window for MinTime (e.g., avg_over_time(m[5m]) → [T-5m, T])
+		maxTimeMilli := ts.UnixMilli()
+		minTimeMilli := maxTimeMilli - queryInfo.Range
+		if minTimeMilli >= maxTimeMilli {
+			minTimeMilli = maxTimeMilli
+		}
+
 		// Try to execute with sketches
-		result, err := r.executeWithSketches(queryInfo, ts.UnixMilli(), ts.UnixMilli(), time.Now().UnixMilli())
+		result, err := r.executeWithSketches(queryInfo, minTimeMilli, maxTimeMilli, time.Now().UnixMilli())
 		if err == nil && result != nil {
 			r.metrics.SketchHits++
 			return &QueryResult{
@@ -171,13 +178,10 @@ func (r *QueryRouter) executeWithSketches(queryInfo *parser.QueryInfo, mint, max
 		return nil, fmt.Errorf("sketch data not available")
 	}
 
-	// Extract quantile argument if needed
+	// Extract function arguments (e.g., quantile value)
 	otherArgs := 0.0
 	if queryInfo.FunctionName == "quantile_over_time" {
-		// For quantile_over_time, we need to extract the quantile value from the query
-		// This would need to be parsed from the expression
-		// For now, default to 0.5 (median)
-		otherArgs = 0.5
+		otherArgs = queryInfo.QuantileValue()
 	}
 
 	// Execute query with sketches
@@ -206,16 +210,20 @@ func (r *QueryRouter) executeWithSketchesRange(queryInfo *parser.QueryInfo, star
 	// For range queries, we need to evaluate at each step
 	results := make([]interface{}, 0)
 
-	for ts := start; ts.Before(end) || ts.Equal(end); ts = ts.Add(step) {
-		tsMilli := ts.UnixMilli()
+	// Extract function arguments outside the loop (they don't change per step)
+	otherArgs := 0.0
+	if queryInfo.FunctionName == "quantile_over_time" {
+		otherArgs = queryInfo.QuantileValue()
+	}
 
-		// Extract quantile argument if needed
-		otherArgs := 0.0
-		if queryInfo.FunctionName == "quantile_over_time" {
-			otherArgs = 0.5 // Default to median
+	for ts := start; ts.Before(end) || ts.Equal(end); ts = ts.Add(step) {
+		evalMaxTime := ts.UnixMilli()
+		evalMinTime := evalMaxTime - queryInfo.Range
+		if evalMinTime >= evalMaxTime {
+			evalMinTime = evalMaxTime
 		}
 
-		result, err := r.storage.Eval(queryInfo.FunctionName, lbls, otherArgs, tsMilli, tsMilli, curTime)
+		result, err := r.storage.Eval(queryInfo.FunctionName, lbls, otherArgs, evalMinTime, evalMaxTime, curTime)
 		if err != nil {
 			continue // Skip this timestamp on error
 		}

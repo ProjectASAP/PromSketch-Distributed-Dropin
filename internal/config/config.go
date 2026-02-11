@@ -69,10 +69,14 @@ type BasicAuth struct {
 
 // SketchConfig configures PromSketch instances
 type SketchConfig struct {
-	NumPartitions int            `yaml:"num_partitions"`
-	Targets       []SketchTarget `yaml:"targets"`
-	Defaults      SketchDefaults `yaml:"defaults"`
-	MemoryLimit   string         `yaml:"memory_limit"`
+	NumPartitions  int            `yaml:"num_partitions"`
+	Targets        []SketchTarget `yaml:"targets"`
+	Defaults       SketchDefaults `yaml:"defaults"`
+	MemoryLimit    string         `yaml:"memory_limit"`
+	// PartitionStart/End define the owned range for cluster mode.
+	// When both are 0, all partitions are allocated (monolithic mode).
+	PartitionStart int `yaml:"partition_start"` // inclusive
+	PartitionEnd   int `yaml:"partition_end"`   // exclusive
 }
 
 // SketchTarget defines which time series should have sketch instances

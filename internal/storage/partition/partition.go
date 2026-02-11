@@ -1,8 +1,7 @@
 package partition
 
 import (
-	"hash/fnv"
-
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -30,9 +29,7 @@ func (p *Partitioner) GetPartition(lbls labels.Labels) int {
 
 // GetPartitionByName returns the partition ID for a metric name
 func (p *Partitioner) GetPartitionByName(metricName string) int {
-	h := fnv.New64a()
-	h.Write([]byte(metricName))
-	hash := h.Sum64()
+	hash := xxhash.Sum64String(metricName)
 	return int(hash % uint64(p.numPartitions))
 }
 

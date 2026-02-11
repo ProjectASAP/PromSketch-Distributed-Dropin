@@ -63,10 +63,19 @@ func (f *Forwarder) Start() error {
 	return nil
 }
 
-// Forward queues a time series for forwarding to the backend
+// Forward queues a time series for forwarding to the backend.
+// The TimeSeries is deep-copied so the caller can safely reuse the buffer.
 func (f *Forwarder) Forward(ts *prompb.TimeSeries) error {
+	// Deep copy to decouple from caller's buffer
+	copied := &prompb.TimeSeries{
+		Labels:  make([]prompb.Label, len(ts.Labels)),
+		Samples: make([]prompb.Sample, len(ts.Samples)),
+	}
+	copy(copied.Labels, ts.Labels)
+	copy(copied.Samples, ts.Samples)
+
 	select {
-	case f.batchCh <- ts:
+	case f.batchCh <- copied:
 		return nil
 	default:
 		// Channel full, drop sample
