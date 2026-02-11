@@ -1,0 +1,157 @@
+version: "3.8"
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.96.0
+    ports:
+      - "8428:8428"
+    volumes:
+      - vmdata:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=30d"
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  psksketch-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.psksketch
+    ports:
+      - "8481:8481"
+      - "8491:8482"
+    volumes:
+      - ./configs/psksketch-1.yaml:/etc/psksketch/config.yaml:ro
+    command:
+      - "--config.file=/etc/psksketch/config.yaml"
+    depends_on:
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  psksketch-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.psksketch
+    ports:
+      - "8483:8481"
+      - "8493:8482"
+    volumes:
+      - ./configs/psksketch-2.yaml:/etc/psksketch/config.yaml:ro
+    command:
+      - "--config.file=/etc/psksketch/config.yaml"
+    depends_on:
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  psksketch-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.psksketch
+    ports:
+      - "8485:8481"
+      - "8495:8482"
+    volumes:
+      - ./configs/psksketch-3.yaml:/etc/psksketch/config.yaml:ro
+    command:
+      - "--config.file=/etc/psksketch/config.yaml"
+    depends_on:
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  pskinsert:
+    build:
+      context: .
+      dockerfile: Dockerfile.pskinsert
+    ports:
+      - "8480:8480"
+    volumes:
+      - ./configs/pskinsert.yaml:/etc/pskinsert/config.yaml:ro
+    command:
+      - "--config.file=/etc/pskinsert/config.yaml"
+    depends_on:
+      - psksketch-1
+      - psksketch-2
+      - psksketch-3
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  pskquery:
+    build:
+      context: .
+      dockerfile: Dockerfile.pskquery
+    ports:
+      - "9100:8480"
+    volumes:
+      - ./configs/pskquery.yaml:/etc/pskquery/config.yaml:ro
+    command:
+      - "--config.file=/etc/pskquery/config.yaml"
+    depends_on:
+      - psksketch-1
+      - psksketch-2
+      - psksketch-3
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - pskquery
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus-cluster.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+    depends_on:
+      - pskinsert
+      - node-exporter
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    ports:
+      - "9101:9100"
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+networks:
+  promsketch-cluster:
+    driver: bridge
+
+volumes:
+  vmdata:
+  grafana-data:
+  prometheus-data:

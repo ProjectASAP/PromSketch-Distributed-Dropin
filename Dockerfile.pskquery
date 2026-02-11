@@ -1,0 +1,24 @@
+# Build stage
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev git
+
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /build/bin/pskquery ./cmd/pskquery
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /build/bin/pskquery /usr/local/bin/pskquery
+
+EXPOSE 8480
+
+ENTRYPOINT ["/usr/local/bin/pskquery"]

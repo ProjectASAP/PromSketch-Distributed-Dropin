@@ -1,0 +1,37 @@
+pskinsert:
+  server:
+    listen_address: ":8480"
+    read_timeout: 30s
+    write_timeout: 30s
+  cluster:
+    total_partitions: 16
+    replication_factor: 2
+    discovery:
+      type: "static"
+      static_nodes:
+        - id: "psksketch-1"
+          address: "psksketch-1:8481"
+          partition_start: 0
+          partition_end: 6
+        - id: "psksketch-2"
+          address: "psksketch-2:8481"
+          partition_start: 6
+          partition_end: 12
+        - id: "psksketch-3"
+          address: "psksketch-3:8481"
+          partition_start: 12
+          partition_end: 16
+    health_check:
+      interval: 10s
+      timeout: 5s
+      failure_threshold: 3
+    circuit_breaker:
+      failure_threshold: 5
+      timeout: 30s
+  backend:
+    type: "victoriametrics"
+    url: "http://victoriametrics:8428"
+    remote_write_url: "http://victoriametrics:8428/api/v1/write"
+    batch_size: 1000
+    flush_interval: 5s
+    max_retries: 3

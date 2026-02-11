@@ -1,0 +1,23 @@
+psksketch:
+  node:
+    id: "psksketch-3"
+    partition_start: 12
+    partition_end: 16
+  server:
+    listen_address: ":8481"
+  http:
+    listen_address: ":8482"
+  storage:
+    num_partitions: 16
+    targets:
+      - match: '{__name__=~"http_.*"}'
+        eh_params:
+          window_size: 3600
+      - match: '{__name__=~"node_.*"}'
+      - match: '*'
+    defaults:
+      eh_params:
+        window_size: 1800
+        k: 50
+        kll_k: 256
+    memory_limit: "4GB"

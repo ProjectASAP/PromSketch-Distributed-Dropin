@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+  - job_name: 'psksketch'
+    static_configs:
+      - targets:
+        - 'psksketch-1:8482'
+        - 'psksketch-2:8482'
+        - 'psksketch-3:8482'
+  - job_name: 'pskinsert'
+    static_configs:
+      - targets: ['pskinsert:8480']
+  - job_name: 'pskquery'
+    static_configs:
+      - targets: ['pskquery:8480']
+
+remote_write:
+  - url: http://pskinsert:8480/api/v1/write
