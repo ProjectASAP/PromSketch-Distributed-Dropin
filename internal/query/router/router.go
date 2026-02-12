@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -19,10 +20,20 @@ type QueryRouter struct {
 	backend      backend.Backend
 	parser       *parser.Parser
 	capabilities *capabilities.Registry
-	metrics      *RouterMetrics
+	metrics      *routerMetrics
 }
 
-// RouterMetrics tracks query routing decisions
+// routerMetrics is the internal atomic state for query routing counters
+type routerMetrics struct {
+	sketchQueries   atomic.Int64
+	backendQueries  atomic.Int64
+	sketchHits      atomic.Int64
+	sketchMisses    atomic.Int64
+	parsingErrors   atomic.Int64
+	executionErrors atomic.Int64
+}
+
+// RouterMetrics is a point-in-time snapshot of query routing metrics
 type RouterMetrics struct {
 	SketchQueries   int64
 	BackendQueries  int64
@@ -59,7 +70,7 @@ func NewRouter(
 		backend:      backend,
 		parser:       parser,
 		capabilities: capabilities,
-		metrics:      &RouterMetrics{},
+		metrics:      &routerMetrics{},
 	}
 }
 
@@ -70,7 +81,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 	// Parse the query
 	queryInfo, err := r.parser.Parse(query)
 	if err != nil {
-		r.metrics.ParsingErrors++
+		r.metrics.parsingErrors.Add(1)
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
@@ -78,7 +89,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 	capability := r.capabilities.CanHandle(queryInfo)
 
 	if capability.CanHandleWithSketches {
-		r.metrics.SketchQueries++
+		r.metrics.sketchQueries.Add(1)
 
 		// Use the query's range window for MinTime (e.g., avg_over_time(m[5m]) → [T-5m, T])
 		maxTimeMilli := ts.UnixMilli()
@@ -90,7 +101,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 		// Try to execute with sketches
 		result, err := r.executeWithSketches(queryInfo, minTimeMilli, maxTimeMilli, time.Now().UnixMilli())
 		if err == nil && result != nil {
-			r.metrics.SketchHits++
+			r.metrics.sketchHits.Add(1)
 			return &QueryResult{
 				Source:          "sketch",
 				Data:            result,
@@ -100,14 +111,14 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 		}
 
 		// Sketch miss - fall back to backend
-		r.metrics.SketchMisses++
+		r.metrics.sketchMisses.Add(1)
 	}
 
 	// Fall back to backend
-	r.metrics.BackendQueries++
+	r.metrics.backendQueries.Add(1)
 	backendResult, err := r.backend.Query(ctx, query, ts)
 	if err != nil {
-		r.metrics.ExecutionErrors++
+		r.metrics.executionErrors.Add(1)
 		return nil, fmt.Errorf("backend query failed: %w", err)
 	}
 
@@ -126,7 +137,7 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 	// Parse the query
 	queryInfo, err := r.parser.Parse(query)
 	if err != nil {
-		r.metrics.ParsingErrors++
+		r.metrics.parsingErrors.Add(1)
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
@@ -134,12 +145,12 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 	capability := r.capabilities.CanHandle(queryInfo)
 
 	if capability.CanHandleWithSketches {
-		r.metrics.SketchQueries++
+		r.metrics.sketchQueries.Add(1)
 
 		// Try to execute with sketches
 		result, err := r.executeWithSketchesRange(queryInfo, start, end, step)
 		if err == nil && result != nil {
-			r.metrics.SketchHits++
+			r.metrics.sketchHits.Add(1)
 			return &QueryResult{
 				Source:          "sketch",
 				Data:            result,
@@ -149,14 +160,14 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 		}
 
 		// Sketch miss - fall back to backend
-		r.metrics.SketchMisses++
+		r.metrics.sketchMisses.Add(1)
 	}
 
 	// Fall back to backend
-	r.metrics.BackendQueries++
+	r.metrics.backendQueries.Add(1)
 	backendResult, err := r.backend.QueryRange(ctx, query, start, end, step)
 	if err != nil {
-		r.metrics.ExecutionErrors++
+		r.metrics.executionErrors.Add(1)
 		return nil, fmt.Errorf("backend query failed: %w", err)
 	}
 
@@ -259,9 +270,16 @@ func (r *QueryRouter) buildLabelsFromQuery(queryInfo *parser.QueryInfo) labels.L
 	return lblsBuilder.Labels()
 }
 
-// Metrics returns the current router metrics
-func (r *QueryRouter) Metrics() *RouterMetrics {
-	return r.metrics
+// Metrics returns a point-in-time snapshot of the current router metrics
+func (r *QueryRouter) Metrics() RouterMetrics {
+	return RouterMetrics{
+		SketchQueries:   r.metrics.sketchQueries.Load(),
+		BackendQueries:  r.metrics.backendQueries.Load(),
+		SketchHits:      r.metrics.sketchHits.Load(),
+		SketchMisses:    r.metrics.sketchMisses.Load(),
+		ParsingErrors:   r.metrics.parsingErrors.Load(),
+		ExecutionErrors: r.metrics.executionErrors.Load(),
+	}
 }
 
 // DecisionReason provides a human-readable reason for routing decisions

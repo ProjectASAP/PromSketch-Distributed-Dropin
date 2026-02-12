@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,15 +16,23 @@ import (
 type MetadataAPI struct {
 	backendURL string
 	httpClient *http.Client
-	metrics    *MetadataMetrics
+	metrics    *metadataMetrics
 }
 
-// MetadataMetrics tracks metadata endpoint usage
+// metadataMetrics is the internal atomic state for metadata endpoint counters
+type metadataMetrics struct {
+	seriesRequests      atomic.Int64
+	labelsRequests      atomic.Int64
+	labelValuesRequests atomic.Int64
+	errors              atomic.Int64
+}
+
+// MetadataMetrics is a point-in-time snapshot of metadata endpoint usage
 type MetadataMetrics struct {
-	SeriesRequests      int
-	LabelsRequests      int
-	LabelValuesRequests int
-	Errors              int
+	SeriesRequests      int64
+	LabelsRequests      int64
+	LabelValuesRequests int64
+	Errors              int64
 }
 
 // NewMetadataAPI creates a new metadata API handler
@@ -33,7 +42,7 @@ func NewMetadataAPI(backendURL string) *MetadataAPI {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		metrics: &MetadataMetrics{},
+		metrics: &metadataMetrics{},
 	}
 }
 
@@ -56,11 +65,11 @@ func (m *MetadataAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleSeries handles /api/v1/series requests
 // Returns list of time series matching label matchers
 func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
-	m.metrics.SeriesRequests++
+	m.metrics.seriesRequests.Add(1)
 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -68,7 +77,7 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 	// Build backend URL
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -79,7 +88,7 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 	// Proxy request to backend
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -93,11 +102,11 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 // handleLabels handles /api/v1/labels requests
 // Returns list of all label names
 func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
-	m.metrics.LabelsRequests++
+	m.metrics.labelsRequests.Add(1)
 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -105,7 +114,7 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 	// Build backend URL
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -116,7 +125,7 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 	// Proxy request to backend
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -130,14 +139,14 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 // handleLabelValues handles /api/v1/label/{name}/values requests
 // Returns list of values for a specific label
 func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) {
-	m.metrics.LabelValuesRequests++
+	m.metrics.labelValuesRequests.Add(1)
 
 	// Extract label name from path
 	// Path format: /api/v1/label/{name}/values
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
 	if len(parts) < 5 {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Invalid label path", http.StatusBadRequest)
 		return
 	}
@@ -145,7 +154,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -153,7 +162,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	// Build backend URL
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -164,7 +173,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	// Proxy request to backend
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
-		m.metrics.Errors++
+		m.metrics.errors.Add(1)
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -213,7 +222,12 @@ func writeError(w http.ResponseWriter, message string, statusCode int) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// Metrics returns current metrics
-func (m *MetadataAPI) Metrics() *MetadataMetrics {
-	return m.metrics
+// Metrics returns a point-in-time snapshot of the current metadata metrics
+func (m *MetadataAPI) Metrics() MetadataMetrics {
+	return MetadataMetrics{
+		SeriesRequests:      m.metrics.seriesRequests.Load(),
+		LabelsRequests:      m.metrics.labelsRequests.Load(),
+		LabelValuesRequests: m.metrics.labelValuesRequests.Load(),
+		Errors:              m.metrics.errors.Load(),
+	}
 }

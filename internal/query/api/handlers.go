@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/promsketch/promsketch-dropin/internal/promsketch"
@@ -15,10 +16,18 @@ import (
 // QueryAPI provides Prometheus-compatible query endpoints
 type QueryAPI struct {
 	router  *router.QueryRouter
-	metrics *APIMetrics
+	metrics *apiMetrics
 }
 
-// APIMetrics tracks API request metrics
+// apiMetrics is the internal atomic state for API request counters
+type apiMetrics struct {
+	queryRequests      atomic.Int64
+	queryRangeRequests atomic.Int64
+	queryErrors        atomic.Int64
+	queryRangeErrors   atomic.Int64
+}
+
+// APIMetrics is a point-in-time snapshot of API request metrics
 type APIMetrics struct {
 	QueryRequests      int64
 	QueryRangeRequests int64
@@ -30,7 +39,7 @@ type APIMetrics struct {
 func NewQueryAPI(r *router.QueryRouter) *QueryAPI {
 	return &QueryAPI{
 		router:  r,
-		metrics: &APIMetrics{},
+		metrics: &apiMetrics{},
 	}
 }
 
@@ -82,12 +91,12 @@ func (api *QueryAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handleQuery handles instant queries
 func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
-	api.metrics.QueryRequests++
+	api.metrics.queryRequests.Add(1)
 
 	// Parse query parameters
 	query := r.FormValue("query")
 	if query == "" {
-		api.metrics.QueryErrors++
+		api.metrics.queryErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "query parameter is required")
 		return
 	}
@@ -101,7 +110,7 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 		// Try parsing as Unix timestamp (float)
 		timeFloat, err := strconv.ParseFloat(timeParam, 64)
 		if err != nil {
-			api.metrics.QueryErrors++
+			api.metrics.queryErrors.Add(1)
 			api.sendError(w, http.StatusBadRequest, "bad_data", "invalid time parameter")
 			return
 		}
@@ -111,7 +120,7 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Execute query
 	result, err := api.router.Query(r.Context(), query, ts)
 	if err != nil {
-		api.metrics.QueryErrors++
+		api.metrics.queryErrors.Add(1)
 		api.sendError(w, http.StatusInternalServerError, "execution", err.Error())
 		return
 	}
@@ -125,12 +134,12 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 // handleQueryRange handles range queries
 func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
-	api.metrics.QueryRangeRequests++
+	api.metrics.queryRangeRequests.Add(1)
 
 	// Parse query parameters
 	query := r.FormValue("query")
 	if query == "" {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "query parameter is required")
 		return
 	}
@@ -140,7 +149,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	stepParam := r.FormValue("step")
 
 	if startParam == "" || endParam == "" || stepParam == "" {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "start, end, and step parameters are required")
 		return
 	}
@@ -148,7 +157,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Parse start time
 	startFloat, err := strconv.ParseFloat(startParam, 64)
 	if err != nil {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "invalid start parameter")
 		return
 	}
@@ -157,7 +166,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Parse end time
 	endFloat, err := strconv.ParseFloat(endParam, 64)
 	if err != nil {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "invalid end parameter")
 		return
 	}
@@ -166,7 +175,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Parse step duration
 	step, err := parseDuration(stepParam)
 	if err != nil {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "invalid step parameter: "+err.Error())
 		return
 	}
@@ -174,7 +183,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Execute range query
 	result, err := api.router.QueryRange(r.Context(), query, start, end, step)
 	if err != nil {
-		api.metrics.QueryRangeErrors++
+		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusInternalServerError, "execution", err.Error())
 		return
 	}
@@ -411,7 +420,12 @@ func (api *QueryAPI) reconstructLabelsFromQuery(queryInfo *parser.QueryInfo) map
 	return labels
 }
 
-// Metrics returns the current API metrics
-func (api *QueryAPI) Metrics() *APIMetrics {
-	return api.metrics
+// Metrics returns a point-in-time snapshot of the current API metrics
+func (api *QueryAPI) Metrics() APIMetrics {
+	return APIMetrics{
+		QueryRequests:      api.metrics.queryRequests.Load(),
+		QueryRangeRequests: api.metrics.queryRangeRequests.Load(),
+		QueryErrors:        api.metrics.queryErrors.Load(),
+		QueryRangeErrors:   api.metrics.queryRangeErrors.Load(),
+	}
 }

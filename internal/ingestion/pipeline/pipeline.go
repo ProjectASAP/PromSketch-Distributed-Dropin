@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -22,16 +23,24 @@ type Pipeline struct {
 	forwarder       *backend.Forwarder
 	remoteWriteHdlr *remotewrite.Handler
 	scrapeManager   *scrape.Manager
-	metrics         *PipelineMetrics
+	metrics         *pipelineMetrics
 	mu              sync.RWMutex
 }
 
-// PipelineMetrics tracks pipeline statistics
+// pipelineMetrics is the internal atomic state for pipeline counters
+type pipelineMetrics struct {
+	totalSamplesReceived    atomic.Uint64
+	sketchSamplesInserted   atomic.Uint64
+	backendSamplesForwarded atomic.Uint64
+	errors                  atomic.Uint64
+}
+
+// PipelineMetrics is a point-in-time snapshot of pipeline statistics
 type PipelineMetrics struct {
-	TotalSamplesReceived uint64
-	SketchSamplesInserted uint64
+	TotalSamplesReceived    uint64
+	SketchSamplesInserted   uint64
 	BackendSamplesForwarded uint64
-	Errors uint64
+	Errors                  uint64
 }
 
 // NewPipeline creates a new ingestion pipeline
@@ -44,7 +53,7 @@ func NewPipeline(
 		config:    cfg,
 		storage:   stor,
 		forwarder: fwd,
-		metrics:   &PipelineMetrics{},
+		metrics:   &pipelineMetrics{},
 	}
 
 	// Initialize remote write handler if enabled
@@ -67,7 +76,7 @@ func (p *Pipeline) Receive(req *prompb.WriteRequest) error {
 	// Process each time series in the request
 	for i := range req.Timeseries {
 		if err := p.processTimeSeries(&req.Timeseries[i]); err != nil {
-			p.metrics.Errors++
+			p.metrics.errors.Add(1)
 			// Log error but continue processing
 			continue
 		}
@@ -82,23 +91,22 @@ func (p *Pipeline) processTimeSeries(ts *prompb.TimeSeries) error {
 	// Convert prompb labels to Prometheus labels
 	lbls := prompbLabelsToLabels(ts.Labels)
 
-	// Process each sample
+	// Insert each sample into PromSketch storage
 	for _, sample := range ts.Samples {
-		p.metrics.TotalSamplesReceived++
+		p.metrics.totalSamplesReceived.Add(1)
 
-		// 1. Insert into PromSketch storage (if matching target)
 		if err := p.storage.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
 			// Log error but continue
 		} else {
-			p.metrics.SketchSamplesInserted++
+			p.metrics.sketchSamplesInserted.Add(1)
 		}
+	}
 
-		// 2. Forward to backend (always, for full retention)
-		if err := p.forwarder.Forward(ts); err != nil {
-			// Log error
-		} else {
-			p.metrics.BackendSamplesForwarded++
-		}
+	// Forward the entire TimeSeries to backend once (not per sample)
+	if err := p.forwarder.Forward(ts); err != nil {
+		// Log error
+	} else {
+		p.metrics.backendSamplesForwarded.Add(uint64(len(ts.Samples)))
 	}
 
 	return nil
@@ -129,11 +137,14 @@ func (p *Pipeline) Stop() error {
 	return nil
 }
 
-// Metrics returns the current pipeline metrics
+// Metrics returns a point-in-time snapshot of the current pipeline metrics
 func (p *Pipeline) Metrics() PipelineMetrics {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return *p.metrics
+	return PipelineMetrics{
+		TotalSamplesReceived:    p.metrics.totalSamplesReceived.Load(),
+		SketchSamplesInserted:   p.metrics.sketchSamplesInserted.Load(),
+		BackendSamplesForwarded: p.metrics.backendSamplesForwarded.Load(),
+		Errors:                  p.metrics.errors.Load(),
+	}
 }
 
 // prompbLabelsToLabels converts prompb labels to Prometheus labels

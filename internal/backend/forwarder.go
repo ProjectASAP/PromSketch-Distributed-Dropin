@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -19,19 +20,28 @@ type Forwarder struct {
 	flushCh       chan struct{}
 	stopCh        chan struct{}
 	wg            sync.WaitGroup
-	metrics       *ForwarderMetrics
+	metrics       *forwarderMetrics
 	mu            sync.Mutex
 	currentBatch  []*prompb.TimeSeries
 	lastFlush     time.Time
 }
 
-// ForwarderMetrics tracks forwarder statistics
+// forwarderMetrics is the internal atomic state for forwarder counters
+type forwarderMetrics struct {
+	samplesForwarded atomic.Uint64
+	samplesDropped   atomic.Uint64
+	batchesSent      atomic.Uint64
+	batchesFailed    atomic.Uint64
+	forwardLatencyMs atomic.Uint64
+}
+
+// ForwarderMetrics is a point-in-time snapshot of forwarder statistics
 type ForwarderMetrics struct {
-	SamplesForwarded   uint64
-	SamplesDropped     uint64
-	BatchesSent        uint64
-	BatchesFailed      uint64
-	ForwardLatencyMs   uint64
+	SamplesForwarded uint64
+	SamplesDropped   uint64
+	BatchesSent      uint64
+	BatchesFailed    uint64
+	ForwardLatencyMs uint64
 }
 
 // NewForwarder creates a new backend forwarder
@@ -42,7 +52,7 @@ func NewForwarder(backend Backend, cfg *config.BackendConfig) *Forwarder {
 		batchCh:      make(chan *prompb.TimeSeries, cfg.BatchSize*10),
 		flushCh:      make(chan struct{}, 1),
 		stopCh:       make(chan struct{}),
-		metrics:      &ForwarderMetrics{},
+		metrics:      &forwarderMetrics{},
 		currentBatch: make([]*prompb.TimeSeries, 0, cfg.BatchSize),
 		lastFlush:    time.Now(),
 	}
@@ -79,7 +89,7 @@ func (f *Forwarder) Forward(ts *prompb.TimeSeries) error {
 		return nil
 	default:
 		// Channel full, drop sample
-		f.metrics.SamplesDropped++
+		f.metrics.samplesDropped.Add(1)
 		return fmt.Errorf("forwarder queue full, sample dropped")
 	}
 }
@@ -153,13 +163,13 @@ func (f *Forwarder) flush() {
 	// Send to backend with retries
 	err := f.sendBatch(batch)
 	if err != nil {
-		f.metrics.BatchesFailed++
+		f.metrics.batchesFailed.Add(1)
 		// In production, we might want to retry or log the error
 		return
 	}
 
-	f.metrics.BatchesSent++
-	f.metrics.SamplesForwarded += uint64(len(batch))
+	f.metrics.batchesSent.Add(1)
+	f.metrics.samplesForwarded.Add(uint64(len(batch)))
 }
 
 // sendBatch sends a batch to the backend with retry logic
@@ -185,7 +195,7 @@ func (f *Forwarder) sendBatch(batch []*prompb.TimeSeries) error {
 		cancel()
 
 		latency := time.Since(start).Milliseconds()
-		f.metrics.ForwardLatencyMs = uint64(latency)
+		f.metrics.forwardLatencyMs.Store(uint64(latency))
 
 		if err == nil {
 			return nil
@@ -210,7 +220,13 @@ func (f *Forwarder) Stop() error {
 	return f.backend.Close()
 }
 
-// Metrics returns the current forwarder metrics
+// Metrics returns a point-in-time snapshot of the current forwarder metrics
 func (f *Forwarder) Metrics() ForwarderMetrics {
-	return *f.metrics
+	return ForwarderMetrics{
+		SamplesForwarded: f.metrics.samplesForwarded.Load(),
+		SamplesDropped:   f.metrics.samplesDropped.Load(),
+		BatchesSent:      f.metrics.batchesSent.Load(),
+		BatchesFailed:    f.metrics.batchesFailed.Load(),
+		ForwardLatencyMs: f.metrics.forwardLatencyMs.Load(),
+	}
 }
