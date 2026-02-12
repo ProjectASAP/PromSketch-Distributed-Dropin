@@ -49,23 +49,28 @@ func parseMemoryLimit(s string) (uint64, error) {
 
 	s = strings.ToUpper(s)
 
-	multipliers := map[string]uint64{
-		"B":  1,
-		"KB": 1024,
-		"MB": 1024 * 1024,
-		"GB": 1024 * 1024 * 1024,
-		"TB": 1024 * 1024 * 1024 * 1024,
+	// Check longest suffixes first to avoid "MB" matching "B"
+	type suffixMult struct {
+		suffix string
+		mult   uint64
+	}
+	multipliers := []suffixMult{
+		{"TB", 1024 * 1024 * 1024 * 1024},
+		{"GB", 1024 * 1024 * 1024},
+		{"MB", 1024 * 1024},
+		{"KB", 1024},
+		{"B", 1},
 	}
 
-	for suffix, mult := range multipliers {
-		if strings.HasSuffix(s, suffix) {
-			numStr := strings.TrimSuffix(s, suffix)
+	for _, sm := range multipliers {
+		if strings.HasSuffix(s, sm.suffix) {
+			numStr := strings.TrimSuffix(s, sm.suffix)
 			numStr = strings.TrimSpace(numStr)
 			val, err := strconv.ParseFloat(numStr, 64)
 			if err != nil {
 				return 0, fmt.Errorf("invalid memory limit %q: %w", s, err)
 			}
-			return uint64(val * float64(mult)), nil
+			return uint64(val * float64(sm.mult)), nil
 		}
 	}
 

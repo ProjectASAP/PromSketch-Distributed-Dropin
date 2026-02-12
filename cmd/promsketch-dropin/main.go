@@ -31,12 +31,18 @@ var (
 
 func main() {
 	var (
-		configFile  = flag.String("config.file", "promsketch-dropin.yaml", "Path to configuration file")
-		showVersion = flag.Bool("version", false, "Show version information")
+		configFile = flag.String("config.file", "promsketch-dropin.yaml", "Path to configuration file")
 	)
+
+	// Reuse existing "version" flag if already registered by a dependency
+	showVersion := flag.CommandLine.Lookup("version")
+	if showVersion == nil {
+		flag.Bool("version", false, "Show version information")
+		showVersion = flag.CommandLine.Lookup("version")
+	}
 	flag.Parse()
 
-	if *showVersion {
+	if showVersion != nil && showVersion.Value.String() == "true" {
 		fmt.Printf("promsketch-dropin\n")
 		fmt.Printf("  version:    %s\n", version)
 		fmt.Printf("  git commit: %s\n", gitCommit)
