@@ -124,7 +124,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 
 	return &QueryResult{
 		Source:          "backend",
-		Data:            backendResult,
+		Data:            backendResult.Result,
 		QueryInfo:       queryInfo,
 		ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 	}, nil
@@ -173,7 +173,7 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 
 	return &QueryResult{
 		Source:          "backend",
-		Data:            backendResult,
+		Data:            backendResult.Result,
 		QueryInfo:       queryInfo,
 		ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 	}, nil
