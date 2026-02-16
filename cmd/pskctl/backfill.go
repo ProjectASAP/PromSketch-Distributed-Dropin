@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -77,7 +78,15 @@ This is useful for populating sketch data from existing metrics.`,
 
 			// Set default checkpoint file if not specified
 			if checkpointFile == "" {
-				checkpointFile = "backfill-checkpoint.json"
+				cacheDir, err := os.UserCacheDir()
+				if err != nil {
+					cacheDir = os.TempDir()
+				}
+				checkpointDir := filepath.Join(cacheDir, "promsketch")
+				if err := os.MkdirAll(checkpointDir, 0755); err != nil {
+					return fmt.Errorf("failed to create checkpoint directory %s: %w", checkpointDir, err)
+				}
+				checkpointFile = filepath.Join(checkpointDir, "backfill-checkpoint.json")
 			}
 
 			// Handle resume mode
@@ -126,8 +135,10 @@ This is useful for populating sketch data from existing metrics.`,
 				}
 			}
 
+			fmt.Printf("Checkpoint file: %s\n", checkpointFile)
+
 			if !silent {
-				fmt.Printf("Backfill Configuration:\n")
+				fmt.Printf("\nBackfill Configuration:\n")
 				fmt.Printf("  Source Type:    %s\n", sourceType)
 				fmt.Printf("  Source URL:     %s\n", sourceURL)
 				fmt.Printf("  Target URL:     %s\n", targetURL)
@@ -135,7 +146,6 @@ This is useful for populating sketch data from existing metrics.`,
 				if matchPattern != "" {
 					fmt.Printf("  Match Pattern:  %s\n", matchPattern)
 				}
-				fmt.Printf("  Checkpoint File: %s\n", checkpointFile)
 				fmt.Printf("  Dry Run:        %v\n\n", dryRun)
 			}
 
@@ -179,7 +189,7 @@ This is useful for populating sketch data from existing metrics.`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview what would be backfilled without writing")
 	cmd.Flags().BoolVarP(&silent, "silent", "s", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Resume from checkpoint file")
-	cmd.Flags().StringVar(&checkpointFile, "checkpoint-file", "backfill-checkpoint.json", "Checkpoint file path")
+	cmd.Flags().StringVar(&checkpointFile, "checkpoint-file", "", "Checkpoint file path (default: ~/.cache/promsketch/backfill-checkpoint.json)")
 
 	// Make flags conditionally required (not required when resuming)
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
