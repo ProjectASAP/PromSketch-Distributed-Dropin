@@ -1,0 +1,2 @@
+#!/bin/bash
+/usr/local/go/bin/go test -timeout 0  -run TestSmoothHistogramUniv -v SmoothHistogram_test.go SmoothHistogram.go UnivMon.go utils.go CountMinSketch.go CountSketch.go heap.go  > ./microbenchmark_results/shuniv.txt
