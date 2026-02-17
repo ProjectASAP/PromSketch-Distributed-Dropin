@@ -1,4 +1,4 @@
-package remotewrite
+package otlp
 
 import (
 	"fmt"
@@ -6,21 +6,21 @@ import (
 	"sync/atomic"
 	"time"
 
-	vmprompb "github.com/zzylol/VictoriaMetrics/lib/prompb"
-	vmstream "github.com/zzylol/VictoriaMetrics/lib/protoparser/promremotewrite/stream"
+	"github.com/zzylol/VictoriaMetrics/lib/prompbmarshal"
+	otlpstream "github.com/zzylol/VictoriaMetrics/lib/protoparser/opentelemetry/stream"
 
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 )
 
-// Handler handles Prometheus remote write requests
+// Handler handles OpenTelemetry metrics ingestion requests.
 type Handler struct {
 	receiver Receiver
 	metrics  *handlerMetrics
 }
 
-// Receiver processes incoming remote write time series parsed by the VM stream parser.
+// Receiver processes incoming OTLP time series parsed by the VM OTLP stream parser.
 type Receiver interface {
-	ReceiveVMTimeSeries(tss []vmprompb.TimeSeries) error
+	ReceiveVMMarshalTimeSeries(tss []prompbmarshal.TimeSeries) error
 }
 
 // handlerMetrics is the internal atomic state for handler counters
@@ -28,7 +28,6 @@ type handlerMetrics struct {
 	requestsReceived atomic.Uint64
 	requestsFailed   atomic.Uint64
 	samplesReceived  atomic.Uint64
-	bytesReceived    atomic.Uint64
 }
 
 // HandlerMetrics is a point-in-time snapshot of handler statistics
@@ -36,10 +35,9 @@ type HandlerMetrics struct {
 	RequestsReceived uint64
 	RequestsFailed   uint64
 	SamplesReceived  uint64
-	BytesReceived    uint64
 }
 
-// NewHandler creates a new remote write handler
+// NewHandler creates a new OTLP handler
 func NewHandler(receiver Receiver) *Handler {
 	return &Handler{
 		receiver: receiver,
@@ -48,50 +46,41 @@ func NewHandler(receiver Receiver) *Handler {
 }
 
 // ServeHTTP implements http.Handler.
-// It uses the VictoriaMetrics stream parser which handles both snappy (Prometheus)
-// and zstd (VM native) compression transparently.
+// It uses the VictoriaMetrics OTLP stream parser which converts OpenTelemetry
+// protobuf metrics to Prometheus-format TimeSeries.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	h.metrics.requestsReceived.Add(1)
-	metrics.RemoteWriteRequestsTotal.Inc()
+	metrics.OTLPRequestsTotal.Inc()
 
-	// Only accept POST requests
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		h.metrics.requestsFailed.Add(1)
-		metrics.RemoteWriteRequestFailuresTotal.Inc()
+		metrics.OTLPRequestFailuresTotal.Inc()
 		return
 	}
 
-	// Track bytes from Content-Length header
-	if r.ContentLength > 0 {
-		h.metrics.bytesReceived.Add(uint64(r.ContentLength))
-		metrics.RemoteWriteBytesTotal.Add(float64(r.ContentLength))
-	}
-
-	// VM stream parser: handles snappy/zstd decompression + protobuf unmarshal.
-	// isVMRemoteWrite=true means try zstd first (VM native protocol).
-	isVMRemoteWrite := r.Header.Get("Content-Encoding") == "zstd"
-	err := vmstream.Parse(r.Body, isVMRemoteWrite, func(tss []vmprompb.TimeSeries) error {
+	isGzipped := r.Header.Get("Content-Encoding") == "gzip"
+	err := otlpstream.ParseStream(r.Body, isGzipped, nil, func(tss []prompbmarshal.TimeSeries) error {
 		// Count samples
 		var n uint64
 		for i := range tss {
 			n += uint64(len(tss[i].Samples))
 		}
 		h.metrics.samplesReceived.Add(n)
-		metrics.RemoteWriteSamplesTotal.Add(float64(n))
+		metrics.OTLPSamplesTotal.Add(float64(n))
 
-		return h.receiver.ReceiveVMTimeSeries(tss)
+		return h.receiver.ReceiveVMMarshalTimeSeries(tss)
 	})
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to process request: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Failed to process OTLP request: %v", err), http.StatusBadRequest)
 		h.metrics.requestsFailed.Add(1)
-		metrics.RemoteWriteRequestFailuresTotal.Inc()
+		metrics.OTLPRequestFailuresTotal.Inc()
 		return
 	}
 
-	metrics.RemoteWriteRequestDuration.Observe(time.Since(start).Seconds())
+	metrics.OTLPRequestDuration.Observe(time.Since(start).Seconds())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -101,6 +90,5 @@ func (h *Handler) Metrics() HandlerMetrics {
 		RequestsReceived: h.metrics.requestsReceived.Load(),
 		RequestsFailed:   h.metrics.requestsFailed.Load(),
 		SamplesReceived:  h.metrics.samplesReceived.Load(),
-		BytesReceived:    h.metrics.bytesReceived.Load(),
 	}
 }

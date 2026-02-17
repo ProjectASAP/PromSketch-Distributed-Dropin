@@ -4,22 +4,34 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
+
+	vmprompb "github.com/zzylol/VictoriaMetrics/lib/prompb"
 )
 
 type mockReceiver struct {
-	receivedRequests []*prompb.WriteRequest
-	receiveFunc      func(req *prompb.WriteRequest) error
+	mu             sync.Mutex
+	receivedCalls  int
+	totalSamples   int
+	totalSeries    int
+	receiveFunc    func(tss []vmprompb.TimeSeries) error
 }
 
-func (m *mockReceiver) Receive(req *prompb.WriteRequest) error {
-	m.receivedRequests = append(m.receivedRequests, req)
+func (m *mockReceiver) ReceiveVMTimeSeries(tss []vmprompb.TimeSeries) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.receivedCalls++
+	m.totalSeries += len(tss)
+	for _, ts := range tss {
+		m.totalSamples += len(ts.Samples)
+	}
 	if m.receiveFunc != nil {
-		return m.receiveFunc(req)
+		return m.receiveFunc(tss)
 	}
 	return nil
 }
@@ -28,7 +40,7 @@ func TestHandler_ValidRequest(t *testing.T) {
 	mock := &mockReceiver{}
 	handler := NewHandler(mock)
 
-	// Create a write request
+	// Create a write request using Prometheus prompb types (same wire format)
 	req := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -63,12 +75,24 @@ func TestHandler_ValidRequest(t *testing.T) {
 
 	// Check response
 	if w.Code != http.StatusNoContent {
-		t.Errorf("Expected status %d, got %d", http.StatusNoContent, w.Code)
+		t.Errorf("Expected status %d, got %d: %s", http.StatusNoContent, w.Code, w.Body.String())
 	}
 
 	// Check that receiver was called
-	if len(mock.receivedRequests) != 1 {
-		t.Errorf("Expected 1 received request, got %d", len(mock.receivedRequests))
+	mock.mu.Lock()
+	calls := mock.receivedCalls
+	series := mock.totalSeries
+	samples := mock.totalSamples
+	mock.mu.Unlock()
+
+	if calls != 1 {
+		t.Errorf("Expected 1 received call, got %d", calls)
+	}
+	if series != 1 {
+		t.Errorf("Expected 1 series, got %d", series)
+	}
+	if samples != 1 {
+		t.Errorf("Expected 1 sample, got %d", samples)
 	}
 
 	// Verify metrics
@@ -104,7 +128,7 @@ func TestHandler_InvalidData(t *testing.T) {
 	mock := &mockReceiver{}
 	handler := NewHandler(mock)
 
-	// Send invalid data
+	// Send invalid data (not valid snappy/zstd)
 	httpReq := httptest.NewRequest("POST", "/api/v1/write", bytes.NewReader([]byte("invalid")))
 	w := httptest.NewRecorder()
 
@@ -151,7 +175,7 @@ func TestHandler_MultipleSamples(t *testing.T) {
 	handler.ServeHTTP(w, httpReq)
 
 	if w.Code != http.StatusNoContent {
-		t.Errorf("Expected status %d, got %d", http.StatusNoContent, w.Code)
+		t.Errorf("Expected status %d, got %d: %s", http.StatusNoContent, w.Code, w.Body.String())
 	}
 
 	metrics := handler.Metrics()

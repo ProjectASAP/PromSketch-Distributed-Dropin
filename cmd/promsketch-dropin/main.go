@@ -67,6 +67,7 @@ func main() {
 	log.Printf("  Sketch partitions: %d", cfg.Sketch.NumPartitions)
 	log.Printf("  Sketch targets: %d", len(cfg.Sketch.Targets))
 	log.Printf("  Remote write enabled: %v", cfg.Ingestion.RemoteWrite.Enabled)
+	log.Printf("  OTLP enabled: %v", cfg.Ingestion.OTLP.Enabled)
 	log.Printf("  Scrape manager enabled: %v", cfg.Ingestion.Scrape.Enabled)
 
 	// 1. Initialize PromSketch storage layer
@@ -133,6 +134,12 @@ func main() {
 		handler := pipe.RemoteWriteHandler()
 		mux.Handle("/api/v1/write", handler)
 		log.Printf("Remote write endpoint enabled at /api/v1/write")
+	}
+
+	// OTLP endpoint
+	if cfg.Ingestion.OTLP.Enabled {
+		mux.Handle("/opentelemetry/v1/metrics", pipe.OTLPHandler())
+		log.Printf("OTLP endpoint enabled at /opentelemetry/v1/metrics")
 	}
 
 	// Query endpoints

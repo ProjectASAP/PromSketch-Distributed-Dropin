@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/gogo/protobuf/proto"
 
 	"github.com/promsketch/promsketch-dropin/internal/backend"
 	"github.com/promsketch/promsketch-dropin/internal/config"

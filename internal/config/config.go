@@ -29,7 +29,13 @@ type ServerConfig struct {
 // IngestionConfig contains ingestion-related settings
 type IngestionConfig struct {
 	RemoteWrite RemoteWriteConfig `yaml:"remote_write"`
+	OTLP        OTLPConfig        `yaml:"otlp"`
 	Scrape      ScrapeConfig      `yaml:"scrape"`
+}
+
+// OTLPConfig configures the OpenTelemetry metrics receiver
+type OTLPConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // RemoteWriteConfig configures the remote write receiver
@@ -219,8 +225,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate at least one ingestion mode is enabled
-	if !c.Ingestion.RemoteWrite.Enabled && !c.Ingestion.Scrape.Enabled {
-		return fmt.Errorf("at least one ingestion mode (remote_write or scrape) must be enabled")
+	if !c.Ingestion.RemoteWrite.Enabled && !c.Ingestion.OTLP.Enabled && !c.Ingestion.Scrape.Enabled {
+		return fmt.Errorf("at least one ingestion mode (remote_write, otlp, or scrape) must be enabled")
 	}
 
 	// Validate log level

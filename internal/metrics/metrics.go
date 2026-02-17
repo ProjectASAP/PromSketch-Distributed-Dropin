@@ -68,6 +68,28 @@ var (
 	})
 )
 
+// ---- OTLP handler ----
+
+var (
+	OTLPRequestsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "promsketch_otlp_requests_total",
+		Help: "Total OTLP metrics requests received.",
+	})
+	OTLPRequestFailuresTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "promsketch_otlp_request_failures_total",
+		Help: "Total OTLP metrics requests that failed.",
+	})
+	OTLPSamplesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "promsketch_otlp_samples_total",
+		Help: "Total samples received via OTLP.",
+	})
+	OTLPRequestDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "promsketch_otlp_request_duration_seconds",
+		Help:    "Duration of OTLP request handling.",
+		Buckets: prometheus.DefBuckets,
+	})
+)
+
 // ---- Query ----
 
 var (

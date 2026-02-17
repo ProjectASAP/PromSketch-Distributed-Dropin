@@ -9,8 +9,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
+	vmprompb "github.com/zzylol/VictoriaMetrics/lib/prompb"
+	"github.com/zzylol/VictoriaMetrics/lib/prompbmarshal"
+
 	"github.com/promsketch/promsketch-dropin/internal/backend"
 	"github.com/promsketch/promsketch-dropin/internal/config"
+	"github.com/promsketch/promsketch-dropin/internal/ingestion/otlp"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/remotewrite"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/scrape"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
@@ -23,10 +27,18 @@ type Pipeline struct {
 	storage         *storage.Storage
 	forwarder       *backend.Forwarder
 	remoteWriteHdlr *remotewrite.Handler
+	otlpHdlr        *otlp.Handler
 	scrapeManager   *scrape.Manager
 	metrics         *pipelineMetrics
 	mu              sync.RWMutex
 }
+
+// Ensure Pipeline implements the receiver interfaces at compile time.
+var (
+	_ remotewrite.Receiver = (*Pipeline)(nil)
+	_ otlp.Receiver        = (*Pipeline)(nil)
+	_ scrape.Receiver      = (*Pipeline)(nil)
+)
 
 // pipelineMetrics is the internal atomic state for pipeline counters
 type pipelineMetrics struct {
@@ -62,29 +74,61 @@ func NewPipeline(
 		p.remoteWriteHdlr = remotewrite.NewHandler(p)
 	}
 
+	// Initialize OTLP handler if enabled
+	if cfg.Ingestion.OTLP.Enabled {
+		p.otlpHdlr = otlp.NewHandler(p)
+	}
+
 	// Initialize scrape manager if enabled
 	if cfg.Ingestion.Scrape.Enabled {
-		// Note: Scrape manager integration requires more setup
-		// For now, we'll skip it in favor of remote write
+		mgr, err := scrape.NewManager(&cfg.Ingestion.Scrape, p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create scrape manager: %w", err)
+		}
+		p.scrapeManager = mgr
 	}
 
 	return p, nil
 }
 
-// Receive implements remotewrite.Receiver
-// Receive implements remotewrite.Receiver
+// ReceiveVMTimeSeries implements remotewrite.Receiver.
+// It converts VM remote write parser output and processes each time series.
+func (p *Pipeline) ReceiveVMTimeSeries(tss []vmprompb.TimeSeries) error {
+	converted := vmPrompbToPrompb(tss)
+	for i := range converted {
+		if err := p.processTimeSeries(&converted[i]); err != nil {
+			p.metrics.errors.Add(1)
+			metrics.IngestionErrorsTotal.Inc()
+			continue
+		}
+	}
+	return nil
+}
+
+// ReceiveVMMarshalTimeSeries implements otlp.Receiver and scrape.Receiver.
+// It converts VM OTLP/scrape parser output and processes each time series.
+func (p *Pipeline) ReceiveVMMarshalTimeSeries(tss []prompbmarshal.TimeSeries) error {
+	converted := vmMarshalToPrompb(tss)
+	for i := range converted {
+		if err := p.processTimeSeries(&converted[i]); err != nil {
+			p.metrics.errors.Add(1)
+			metrics.IngestionErrorsTotal.Inc()
+			continue
+		}
+	}
+	return nil
+}
+
+// Receive processes a standard Prometheus prompb WriteRequest.
+// Kept for backward compatibility and direct use in tests.
 func (p *Pipeline) Receive(req *prompb.WriteRequest) error {
-	// Process each time series in the request
 	for i := range req.Timeseries {
 		if err := p.processTimeSeries(&req.Timeseries[i]); err != nil {
 			p.metrics.errors.Add(1)
 			metrics.IngestionErrorsTotal.Inc()
-			// Log error but continue processing
 			continue
 		}
 	}
-
-
 	return nil
 }
 
@@ -120,6 +164,11 @@ func (p *Pipeline) processTimeSeries(ts *prompb.TimeSeries) error {
 // RemoteWriteHandler returns the HTTP handler for remote write
 func (p *Pipeline) RemoteWriteHandler() *remotewrite.Handler {
 	return p.remoteWriteHdlr
+}
+
+// OTLPHandler returns the HTTP handler for OTLP metrics ingestion
+func (p *Pipeline) OTLPHandler() *otlp.Handler {
+	return p.otlpHdlr
 }
 
 // Start starts the pipeline

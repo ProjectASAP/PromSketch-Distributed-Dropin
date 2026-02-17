@@ -19,10 +19,16 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
+	"github.com/zzylol/VictoriaMetrics/lib/auth"
+	"github.com/zzylol/VictoriaMetrics/lib/prompbmarshal"
+	"github.com/zzylol/VictoriaMetrics/lib/promscrape"
+	otlpstream "github.com/zzylol/VictoriaMetrics/lib/protoparser/opentelemetry/stream"
+
 	"github.com/promsketch/promsketch-dropin/internal/backend"
 	"github.com/promsketch/promsketch-dropin/internal/backendfactory"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/hash"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/health"
+	"github.com/promsketch/promsketch-dropin/internal/ingestion/pipeline"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	pskconfig "github.com/promsketch/promsketch-dropin/internal/pskinsert/config"
@@ -169,6 +175,61 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// OTLP endpoint
+	mux.HandleFunc("/opentelemetry/v1/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		isGzipped := r.Header.Get("Content-Encoding") == "gzip"
+		err := otlpstream.ParseStream(r.Body, isGzipped, nil, func(tss []prompbmarshal.TimeSeries) error {
+			for i := range tss {
+				ts := &tss[i]
+				lbls := pipeline.VMMarshalLabelsToLabels(ts.Labels)
+				for _, sample := range ts.Samples {
+					if err := insertRouter.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
+						log.Printf("Insert error: %v", err)
+					}
+				}
+				promTS := pipeline.VMMarshalTSToPrompb(ts)
+				if err := forwarder.Forward(promTS); err != nil {
+					log.Printf("Forward error: %v", err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to process OTLP request: %v", err), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	log.Printf("OTLP endpoint enabled at /opentelemetry/v1/metrics")
+
+	// Start promscrape if configured
+	if scrapeConfigFile := flag.Lookup("promscrape.config"); scrapeConfigFile != nil && scrapeConfigFile.Value.String() != "" {
+		promscrape.Init(func(at *auth.Token, wr *prompbmarshal.WriteRequest) {
+			if wr == nil {
+				return
+			}
+			for i := range wr.Timeseries {
+				ts := &wr.Timeseries[i]
+				lbls := pipeline.VMMarshalLabelsToLabels(ts.Labels)
+				for _, sample := range ts.Samples {
+					if err := insertRouter.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
+						log.Printf("Scrape insert error: %v", err)
+					}
+				}
+				promTS := pipeline.VMMarshalTSToPrompb(ts)
+				if err := forwarder.Forward(promTS); err != nil {
+					log.Printf("Scrape forward error: %v", err)
+				}
+			}
+		})
+		log.Printf("Promscrape enabled with config: %s", scrapeConfigFile.Value.String())
+	}
+
 	// Health endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -209,6 +270,7 @@ func main() {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
 
+	promscrape.Stop()
 	forwarder.Stop()
 	healthChecker.Stop()
 	pool.Close()
