@@ -15,6 +15,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/promsketch/promsketch-dropin/internal/backendfactory"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/hash"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/health"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	pskconfig "github.com/promsketch/promsketch-dropin/internal/pskinsert/config"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/router"
@@ -55,6 +57,7 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	metrics.SetBuildInfo(version, gitCommit, buildDate, "pskinsert")
 	log.Printf("Starting pskinsert...")
 	log.Printf("  Listen address: %s", cfg.Server.ListenAddress)
 	log.Printf("  Total partitions: %d", cfg.Cluster.TotalPartitions)
@@ -176,23 +179,8 @@ func main() {
 		})
 	})
 
-	// Metrics endpoint (Prometheus text exposition format)
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		m := insertRouter.Metrics()
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		fmt.Fprintf(w, "# HELP pskinsert_samples_routed_total Total samples routed to sketch nodes.\n")
-		fmt.Fprintf(w, "# TYPE pskinsert_samples_routed_total counter\n")
-		fmt.Fprintf(w, "pskinsert_samples_routed_total %d\n", m.SamplesRouted)
-		fmt.Fprintf(w, "# HELP pskinsert_samples_failed_total Total samples that failed routing.\n")
-		fmt.Fprintf(w, "# TYPE pskinsert_samples_failed_total counter\n")
-		fmt.Fprintf(w, "pskinsert_samples_failed_total %d\n", m.SamplesFailed)
-		fmt.Fprintf(w, "# HELP pskinsert_rpcs_sent_total Total gRPC insert RPCs sent.\n")
-		fmt.Fprintf(w, "# TYPE pskinsert_rpcs_sent_total counter\n")
-		fmt.Fprintf(w, "pskinsert_rpcs_sent_total %d\n", m.RPCsSent)
-		fmt.Fprintf(w, "# HELP pskinsert_rpcs_failed_total Total gRPC insert RPCs failed.\n")
-		fmt.Fprintf(w, "# TYPE pskinsert_rpcs_failed_total counter\n")
-		fmt.Fprintf(w, "pskinsert_rpcs_failed_total %d\n", m.RPCsFailed)
-	})
+	// Metrics endpoint (Prometheus client_golang)
+	mux.Handle("/metrics", promhttp.Handler())
 
 	httpServer := &http.Server{
 		Addr:         cfg.Server.ListenAddress,

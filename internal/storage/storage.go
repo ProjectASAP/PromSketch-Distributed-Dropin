@@ -11,6 +11,7 @@ import (
 	sketchlabels "github.com/zzylol/prometheus-sketches/model/labels"
 
 	"github.com/promsketch/promsketch-dropin/internal/config"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/promsketch"
 	"github.com/promsketch/promsketch-dropin/internal/storage/matcher"
 	"github.com/promsketch/promsketch-dropin/internal/storage/partition"
@@ -122,6 +123,10 @@ func NewStorage(cfg *config.SketchConfig) (*Storage, error) {
 		partitionEnd:   partEnd,
 	}
 
+	// Set Prometheus gauges for memory limit and partition count
+	metrics.StorageMemoryLimitBytes.Set(float64(memLimit))
+	metrics.PartitionCount.Set(float64(numOwned))
+
 	return s, nil
 }
 
@@ -153,14 +158,18 @@ func (s *Storage) Insert(lbls promlabels.Labels, timestamp int64, value float64)
 		const estimatedBytesPerSeries = 64 * 1024
 		if s.memoryLimit > 0 && s.memoryUsed.Load()+estimatedBytesPerSeries > s.memoryLimit {
 			s.metrics.MemoryRejections.Add(1)
+			metrics.StorageMemoryRejectionsTotal.Inc()
 			return fmt.Errorf("memory limit exceeded (%d bytes used, limit %d bytes): rejecting new series", s.memoryUsed.Load(), s.memoryLimit)
 		}
 		if err := s.createSketchInstance(ps, sketchLabels, target); err != nil {
 			s.metrics.SketchInsertErrors.Add(1)
+			metrics.StorageInsertErrorsTotal.Inc()
 			return fmt.Errorf("failed to create sketch instance: %w", err)
 		}
 		s.memoryUsed.Add(estimatedBytesPerSeries)
+		metrics.StorageMemoryUsedBytes.Add(float64(estimatedBytesPerSeries))
 		s.metrics.SketchedSeries.Add(1)
+		metrics.StorageSketchedSeries.Inc()
 	}
 
 	// Insert sample into sketch
@@ -168,10 +177,12 @@ func (s *Storage) Insert(lbls promlabels.Labels, timestamp int64, value float64)
 	err := ps.SketchInsert(sketchLabels, timestamp, value)
 	if err != nil {
 		s.metrics.SketchInsertErrors.Add(1)
+		metrics.StorageInsertErrorsTotal.Inc()
 		return fmt.Errorf("failed to insert into sketch: %w", err)
 	}
 
 	s.metrics.SamplesInserted.Add(1)
+	metrics.StorageSamplesInsertedTotal.Inc()
 	return nil
 }
 

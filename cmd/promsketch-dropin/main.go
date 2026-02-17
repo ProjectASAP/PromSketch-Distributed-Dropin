@@ -11,10 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/promsketch/promsketch-dropin/internal/backend"
 	"github.com/promsketch/promsketch-dropin/internal/backendfactory"
 	"github.com/promsketch/promsketch-dropin/internal/config"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/pipeline"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/query/api"
 	"github.com/promsketch/promsketch-dropin/internal/query/capabilities"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
@@ -56,6 +59,7 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	metrics.SetBuildInfo(version, gitCommit, buildDate, "promsketch-dropin")
 	log.Printf("Starting PromSketch-Dropin...")
 	log.Printf("  Server listen address: %s", cfg.Server.ListenAddress)
 	log.Printf("  Backend type: %s", cfg.Backend.Type)
@@ -160,43 +164,8 @@ func main() {
 		fmt.Fprintf(w, "OK\n")
 	})
 
-	// Metrics endpoint (basic)
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		storageMetrics := stor.Metrics()
-		forwarderMetrics := forwarder.Metrics()
-		pipelineMetrics := pipe.Metrics()
-		routerMetrics := queryRouter.Metrics()
-		apiMetrics := queryAPI.Metrics()
-		metadataMetrics := metadataAPI.Metrics()
-
-		fmt.Fprintf(w, "# PromSketch-Dropin Metrics\n")
-		fmt.Fprintf(w, "storage_total_series %d\n", storageMetrics.TotalSeries)
-		fmt.Fprintf(w, "storage_sketched_series %d\n", storageMetrics.SketchedSeries)
-		fmt.Fprintf(w, "storage_samples_inserted %d\n", storageMetrics.SamplesInserted)
-		fmt.Fprintf(w, "storage_sketch_errors %d\n", storageMetrics.SketchInsertErrors)
-		fmt.Fprintf(w, "forwarder_samples_forwarded %d\n", forwarderMetrics.SamplesForwarded)
-		fmt.Fprintf(w, "forwarder_samples_dropped %d\n", forwarderMetrics.SamplesDropped)
-		fmt.Fprintf(w, "forwarder_batches_sent %d\n", forwarderMetrics.BatchesSent)
-		fmt.Fprintf(w, "forwarder_batches_failed %d\n", forwarderMetrics.BatchesFailed)
-		fmt.Fprintf(w, "pipeline_samples_received %d\n", pipelineMetrics.TotalSamplesReceived)
-		fmt.Fprintf(w, "pipeline_sketch_samples %d\n", pipelineMetrics.SketchSamplesInserted)
-		fmt.Fprintf(w, "pipeline_backend_samples %d\n", pipelineMetrics.BackendSamplesForwarded)
-		fmt.Fprintf(w, "pipeline_errors %d\n", pipelineMetrics.Errors)
-		fmt.Fprintf(w, "router_sketch_queries %d\n", routerMetrics.SketchQueries)
-		fmt.Fprintf(w, "router_backend_queries %d\n", routerMetrics.BackendQueries)
-		fmt.Fprintf(w, "router_sketch_hits %d\n", routerMetrics.SketchHits)
-		fmt.Fprintf(w, "router_sketch_misses %d\n", routerMetrics.SketchMisses)
-		fmt.Fprintf(w, "router_parsing_errors %d\n", routerMetrics.ParsingErrors)
-		fmt.Fprintf(w, "router_execution_errors %d\n", routerMetrics.ExecutionErrors)
-		fmt.Fprintf(w, "api_query_requests %d\n", apiMetrics.QueryRequests)
-		fmt.Fprintf(w, "api_query_range_requests %d\n", apiMetrics.QueryRangeRequests)
-		fmt.Fprintf(w, "api_query_errors %d\n", apiMetrics.QueryErrors)
-		fmt.Fprintf(w, "api_query_range_errors %d\n", apiMetrics.QueryRangeErrors)
-		fmt.Fprintf(w, "metadata_series_requests %d\n", metadataMetrics.SeriesRequests)
-		fmt.Fprintf(w, "metadata_labels_requests %d\n", metadataMetrics.LabelsRequests)
-		fmt.Fprintf(w, "metadata_label_values_requests %d\n", metadataMetrics.LabelValuesRequests)
-		fmt.Fprintf(w, "metadata_errors %d\n", metadataMetrics.Errors)
-	})
+	// Metrics endpoint (Prometheus client_golang)
+	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
 		Addr:         cfg.Server.ListenAddress,

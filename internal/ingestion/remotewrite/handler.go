@@ -5,10 +5,13 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
+
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 )
 
 // Handler handles Prometheus remote write requests
@@ -48,12 +51,15 @@ func NewHandler(receiver Receiver) *Handler {
 
 // ServeHTTP implements http.Handler
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	h.metrics.requestsReceived.Add(1)
+	metrics.RemoteWriteRequestsTotal.Inc()
 
 	// Only accept POST requests
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		h.metrics.requestsFailed.Add(1)
+		metrics.RemoteWriteRequestFailuresTotal.Inc()
 		return
 	}
 
@@ -62,17 +68,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
 		h.metrics.requestsFailed.Add(1)
+		metrics.RemoteWriteRequestFailuresTotal.Inc()
 		return
 	}
 	defer r.Body.Close()
 
 	h.metrics.bytesReceived.Add(uint64(len(compressed)))
+	metrics.RemoteWriteBytesTotal.Add(float64(len(compressed)))
 
 	// Decompress using snappy
 	decompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to decompress request: %v", err), http.StatusBadRequest)
 		h.metrics.requestsFailed.Add(1)
+		metrics.RemoteWriteRequestFailuresTotal.Inc()
 		return
 	}
 
@@ -81,22 +90,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := proto.Unmarshal(decompressed, &req); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to unmarshal request: %v", err), http.StatusBadRequest)
 		h.metrics.requestsFailed.Add(1)
+		metrics.RemoteWriteRequestFailuresTotal.Inc()
 		return
 	}
 
 	// Count samples
 	for _, ts := range req.Timeseries {
-		h.metrics.samplesReceived.Add(uint64(len(ts.Samples)))
+		n := uint64(len(ts.Samples))
+		h.metrics.samplesReceived.Add(n)
+		metrics.RemoteWriteSamplesTotal.Add(float64(n))
 	}
 
 	// Process the request
 	if err := h.receiver.Receive(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to process request: %v", err), http.StatusInternalServerError)
 		h.metrics.requestsFailed.Add(1)
+		metrics.RemoteWriteRequestFailuresTotal.Inc()
 		return
 	}
 
 	// Return success
+	metrics.RemoteWriteRequestDuration.Observe(time.Since(start).Seconds())
 	w.WriteHeader(http.StatusNoContent)
 }
 

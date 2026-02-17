@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/promsketch"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
 	"github.com/promsketch/promsketch-dropin/internal/query/router"
@@ -92,6 +93,7 @@ func (api *QueryAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleQuery handles instant queries
 func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 	api.metrics.queryRequests.Add(1)
+	metrics.QueryRequestsTotal.WithLabelValues("instant").Inc()
 
 	// Parse query parameters
 	query := r.FormValue("query")
@@ -134,6 +136,7 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 // handleQueryRange handles range queries
 func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	api.metrics.queryRangeRequests.Add(1)
+	metrics.QueryRequestsTotal.WithLabelValues("range").Inc()
 
 	// Parse query parameters
 	query := r.FormValue("query")

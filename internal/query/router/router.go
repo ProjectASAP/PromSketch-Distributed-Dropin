@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/promsketch/promsketch-dropin/internal/backend"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/promsketch"
 	"github.com/promsketch/promsketch-dropin/internal/query/capabilities"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
@@ -77,11 +78,15 @@ func NewRouter(
 // Query executes an instant query
 func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*QueryResult, error) {
 	startTime := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("instant").Observe(time.Since(startTime).Seconds())
+	}()
 
 	// Parse the query
 	queryInfo, err := r.parser.Parse(query)
 	if err != nil {
 		r.metrics.parsingErrors.Add(1)
+		metrics.QueryErrorsTotal.WithLabelValues("instant").Inc()
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
@@ -90,6 +95,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 
 	if capability.CanHandleWithSketches {
 		r.metrics.sketchQueries.Add(1)
+		metrics.QuerySourceTotal.WithLabelValues("sketch").Inc()
 
 		// Use the query's range window for MinTime (e.g., avg_over_time(m[5m]) → [T-5m, T])
 		maxTimeMilli := ts.UnixMilli()
@@ -102,6 +108,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 		result, err := r.executeWithSketches(queryInfo, minTimeMilli, maxTimeMilli, time.Now().UnixMilli())
 		if err == nil && result != nil {
 			r.metrics.sketchHits.Add(1)
+			metrics.QuerySketchHitsTotal.Inc()
 			return &QueryResult{
 				Source:          "sketch",
 				Data:            result,
@@ -112,13 +119,16 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 
 		// Sketch miss - fall back to backend
 		r.metrics.sketchMisses.Add(1)
+		metrics.QuerySketchMissesTotal.Inc()
 	}
 
 	// Fall back to backend
 	r.metrics.backendQueries.Add(1)
+	metrics.QuerySourceTotal.WithLabelValues("backend").Inc()
 	backendResult, err := r.backend.Query(ctx, query, ts)
 	if err != nil {
 		r.metrics.executionErrors.Add(1)
+		metrics.QueryErrorsTotal.WithLabelValues("instant").Inc()
 		return nil, fmt.Errorf("backend query failed: %w", err)
 	}
 
@@ -133,11 +143,15 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 // QueryRange executes a range query
 func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration) (*QueryResult, error) {
 	startExec := time.Now()
+	defer func() {
+		metrics.QueryDurationSeconds.WithLabelValues("range").Observe(time.Since(startExec).Seconds())
+	}()
 
 	// Parse the query
 	queryInfo, err := r.parser.Parse(query)
 	if err != nil {
 		r.metrics.parsingErrors.Add(1)
+		metrics.QueryErrorsTotal.WithLabelValues("range").Inc()
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
 
@@ -146,11 +160,13 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 
 	if capability.CanHandleWithSketches {
 		r.metrics.sketchQueries.Add(1)
+		metrics.QuerySourceTotal.WithLabelValues("sketch").Inc()
 
 		// Try to execute with sketches
 		result, err := r.executeWithSketchesRange(queryInfo, start, end, step)
 		if err == nil && result != nil {
 			r.metrics.sketchHits.Add(1)
+			metrics.QuerySketchHitsTotal.Inc()
 			return &QueryResult{
 				Source:          "sketch",
 				Data:            result,
@@ -161,13 +177,16 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 
 		// Sketch miss - fall back to backend
 		r.metrics.sketchMisses.Add(1)
+		metrics.QuerySketchMissesTotal.Inc()
 	}
 
 	// Fall back to backend
 	r.metrics.backendQueries.Add(1)
+	metrics.QuerySourceTotal.WithLabelValues("backend").Inc()
 	backendResult, err := r.backend.QueryRange(ctx, query, start, end, step)
 	if err != nil {
 		r.metrics.executionErrors.Add(1)
+		metrics.QueryErrorsTotal.WithLabelValues("range").Inc()
 		return nil, fmt.Errorf("backend query failed: %w", err)
 	}
 

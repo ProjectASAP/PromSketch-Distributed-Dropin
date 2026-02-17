@@ -13,6 +13,7 @@ import (
 	"github.com/promsketch/promsketch-dropin/internal/config"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/remotewrite"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/scrape"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/storage"
 )
 
@@ -77,6 +78,7 @@ func (p *Pipeline) Receive(req *prompb.WriteRequest) error {
 	for i := range req.Timeseries {
 		if err := p.processTimeSeries(&req.Timeseries[i]); err != nil {
 			p.metrics.errors.Add(1)
+			metrics.IngestionErrorsTotal.Inc()
 			// Log error but continue processing
 			continue
 		}
@@ -94,11 +96,13 @@ func (p *Pipeline) processTimeSeries(ts *prompb.TimeSeries) error {
 	// Insert each sample into PromSketch storage
 	for _, sample := range ts.Samples {
 		p.metrics.totalSamplesReceived.Add(1)
+		metrics.IngestionSamplesTotal.Inc()
 
 		if err := p.storage.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
 			// Log error but continue
 		} else {
 			p.metrics.sketchSamplesInserted.Add(1)
+			metrics.IngestionSketchSamplesTotal.Inc()
 		}
 	}
 
@@ -107,6 +111,7 @@ func (p *Pipeline) processTimeSeries(ts *prompb.TimeSeries) error {
 		// Log error
 	} else {
 		p.metrics.backendSamplesForwarded.Add(uint64(len(ts.Samples)))
+		metrics.IngestionBackendSamplesTotal.Add(float64(len(ts.Samples)))
 	}
 
 	return nil

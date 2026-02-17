@@ -12,6 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/psksketch/config"
 	"github.com/promsketch/promsketch-dropin/internal/psksketch/server"
 	"github.com/promsketch/promsketch-dropin/internal/storage"
@@ -45,6 +48,7 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	metrics.SetBuildInfo(version, gitCommit, buildDate, "psksketch")
 	log.Printf("Starting psksketch node...")
 	log.Printf("  Node ID: %s", cfg.Node.ID)
 	log.Printf("  Partition range: [%d, %d)", cfg.Node.PartitionStart, cfg.Node.PartitionEnd)
@@ -86,23 +90,7 @@ func main() {
 			},
 		})
 	})
-	httpMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		metrics := stor.Metrics()
-		nodeID := cfg.Node.ID
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		fmt.Fprintf(w, "# HELP psksketch_total_series Total number of series tracked.\n")
-		fmt.Fprintf(w, "# TYPE psksketch_total_series gauge\n")
-		fmt.Fprintf(w, "psksketch_total_series{node_id=\"%s\"} %d\n", nodeID, metrics.TotalSeries)
-		fmt.Fprintf(w, "# HELP psksketch_sketched_series Number of series with active sketches.\n")
-		fmt.Fprintf(w, "# TYPE psksketch_sketched_series gauge\n")
-		fmt.Fprintf(w, "psksketch_sketched_series{node_id=\"%s\"} %d\n", nodeID, metrics.SketchedSeries)
-		fmt.Fprintf(w, "# HELP psksketch_samples_inserted_total Total samples inserted.\n")
-		fmt.Fprintf(w, "# TYPE psksketch_samples_inserted_total counter\n")
-		fmt.Fprintf(w, "psksketch_samples_inserted_total{node_id=\"%s\"} %d\n", nodeID, metrics.SamplesInserted)
-		fmt.Fprintf(w, "# HELP psksketch_insert_errors_total Total insert errors.\n")
-		fmt.Fprintf(w, "# TYPE psksketch_insert_errors_total counter\n")
-		fmt.Fprintf(w, "psksketch_insert_errors_total{node_id=\"%s\"} %d\n", nodeID, metrics.SketchInsertErrors)
-	})
+	httpMux.Handle("/metrics", promhttp.Handler())
 
 	httpServer := &http.Server{
 		Addr:         cfg.HTTP.ListenAddress,

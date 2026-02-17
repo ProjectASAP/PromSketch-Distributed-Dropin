@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 )
 
 // MetadataAPI handles Prometheus metadata API endpoints
@@ -66,10 +68,12 @@ func (m *MetadataAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Returns list of time series matching label matchers
 func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 	m.metrics.seriesRequests.Add(1)
+	metrics.MetadataRequestsTotal.WithLabelValues("series").Inc()
 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -78,6 +82,7 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -89,6 +94,7 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -103,10 +109,12 @@ func (m *MetadataAPI) handleSeries(w http.ResponseWriter, r *http.Request) {
 // Returns list of all label names
 func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 	m.metrics.labelsRequests.Add(1)
+	metrics.MetadataRequestsTotal.WithLabelValues("labels").Inc()
 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -115,6 +123,7 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -126,6 +135,7 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -140,6 +150,7 @@ func (m *MetadataAPI) handleLabels(w http.ResponseWriter, r *http.Request) {
 // Returns list of values for a specific label
 func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	m.metrics.labelValuesRequests.Add(1)
+	metrics.MetadataRequestsTotal.WithLabelValues("label_values").Inc()
 
 	// Extract label name from path
 	// Path format: /api/v1/label/{name}/values
@@ -147,6 +158,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	parts := strings.Split(path, "/")
 	if len(parts) < 5 {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Invalid label path", http.StatusBadRequest)
 		return
 	}
@@ -155,6 +167,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	// Parse query parameters
 	if err := r.ParseForm(); err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Invalid query parameters", http.StatusBadRequest)
 		return
 	}
@@ -163,6 +176,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	backendURL, err := url.Parse(m.backendURL)
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, "Backend URL error", http.StatusInternalServerError)
 		return
 	}
@@ -174,6 +188,7 @@ func (m *MetadataAPI) handleLabelValues(w http.ResponseWriter, r *http.Request) 
 	resp, err := m.proxyRequest(r.Context(), backendURL.String())
 	if err != nil {
 		m.metrics.errors.Add(1)
+		metrics.MetadataErrorsTotal.Inc()
 		writeError(w, fmt.Sprintf("Backend query failed: %v", err), http.StatusInternalServerError)
 		return
 	}

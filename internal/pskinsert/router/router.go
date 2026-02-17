@@ -13,6 +13,7 @@ import (
 	pb "github.com/promsketch/promsketch-dropin/api/psksketch/v1"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/hash"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/health"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 )
 
@@ -58,6 +59,7 @@ func (r *Router) Insert(lbls promlabels.Labels, timestamp int64, value float64) 
 
 	if len(nodes) == 0 {
 		atomic.AddUint64(&r.metrics.SamplesFailed, 1)
+		metrics.InsertRouterSamplesFailedTotal.Inc()
 		return fmt.Errorf("no nodes available for partition %d", partitionID)
 	}
 
@@ -94,9 +96,11 @@ func (r *Router) Insert(lbls promlabels.Labels, timestamp int64, value float64) 
 			defer cancel()
 
 			atomic.AddUint64(&r.metrics.RPCsSent, 1)
+			metrics.InsertRouterRPCsSentTotal.Inc()
 			resp, err := c.Insert(ctx, req)
 			if err != nil {
 				atomic.AddUint64(&r.metrics.RPCsFailed, 1)
+				metrics.InsertRouterRPCsFailedTotal.Inc()
 				r.healthChecker.RecordFailure(nodeID)
 				errsMu.Lock()
 				errs = append(errs, fmt.Errorf("node %s: %w", nodeID, err))
@@ -123,10 +127,12 @@ func (r *Router) Insert(lbls promlabels.Labels, timestamp int64, value float64) 
 	// Succeed if at least one node accepted (write quorum = 1)
 	if successCount > 0 {
 		atomic.AddUint64(&r.metrics.SamplesRouted, 1)
+		metrics.InsertRouterSamplesRoutedTotal.Inc()
 		return nil
 	}
 
 	atomic.AddUint64(&r.metrics.SamplesFailed, 1)
+	metrics.InsertRouterSamplesFailedTotal.Inc()
 	if len(errs) > 0 {
 		return fmt.Errorf("all nodes failed for partition %d: %v", partitionID, errs[0])
 	}
@@ -185,9 +191,11 @@ func (r *Router) BatchInsert(timeSeries []pb.TimeSeries) error {
 			defer cancel()
 
 			atomic.AddUint64(&r.metrics.RPCsSent, 1)
+			metrics.InsertRouterRPCsSentTotal.Inc()
 			resp, err := c.BatchInsert(ctx, b)
 			if err != nil {
 				atomic.AddUint64(&r.metrics.RPCsFailed, 1)
+				metrics.InsertRouterRPCsFailedTotal.Inc()
 				r.healthChecker.RecordFailure(id)
 				errsMu.Lock()
 				errs = append(errs, fmt.Errorf("node %s: %w", id, err))
@@ -197,6 +205,7 @@ func (r *Router) BatchInsert(timeSeries []pb.TimeSeries) error {
 
 			r.healthChecker.RecordSuccess(id)
 			atomic.AddUint64(&r.metrics.SamplesRouted, uint64(resp.Inserted))
+			metrics.InsertRouterSamplesRoutedTotal.Add(float64(resp.Inserted))
 			if resp.Failed > 0 {
 				log.Printf("Node %s: %d samples failed to insert", id, resp.Failed)
 			}

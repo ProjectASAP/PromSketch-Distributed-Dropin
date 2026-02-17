@@ -1,0 +1,468 @@
+{
+  "uid": "promsketch-selfmon",
+  "title": "PromSketch-Dropin Self-Monitoring",
+  "tags": ["promsketch", "selfmon"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 100,
+      "title": "Overview",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "Build Info",
+      "type": "table",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "promsketch_build_info",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "pattern": "version|commit|date|component" } } }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Ingestion Rate (samples/sec)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "rate(promsketch_ingestion_samples_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "samples/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 3,
+      "title": "Query Rate (queries/sec)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(promsketch_query_requests_total[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "queries/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 4,
+      "title": "Sketch Hit Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [
+        {
+          "expr": "rate(promsketch_query_sketch_hits_total[5m]) / (rate(promsketch_query_sketch_hits_total[5m]) + rate(promsketch_query_sketch_misses_total[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "hit rate"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 101,
+      "title": "Ingestion",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "id": 10,
+      "title": "Ingestion Samples/sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_ingestion_samples_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "total received"
+        },
+        {
+          "expr": "rate(promsketch_ingestion_sketch_samples_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "sketch inserts"
+        },
+        {
+          "expr": "rate(promsketch_ingestion_backend_samples_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "backend forwards"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Remote Write Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_remotewrite_requests_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "requests/s"
+        },
+        {
+          "expr": "rate(promsketch_remotewrite_samples_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "samples/s"
+        },
+        {
+          "expr": "rate(promsketch_remotewrite_request_failures_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "failures/s"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Remote Write Bytes/sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_remotewrite_bytes_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "bytes/s"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "title": "Query Routing",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "id": 20,
+      "title": "Sketch vs Fallback Ratio",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "expr": "increase(promsketch_query_sketch_hits_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "Sketch Hits"
+        },
+        {
+          "expr": "increase(promsketch_query_sketch_misses_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "Backend Fallback"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "Sketch Hit Rate Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_query_sketch_hits_total[5m]) / (rate(promsketch_query_sketch_hits_total[5m]) + rate(promsketch_query_sketch_misses_total[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "sketch hit rate"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Query Source Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_query_source_total{source=\"sketch\"}[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "sketch"
+        },
+        {
+          "expr": "rate(promsketch_query_source_total{source=\"backend\"}[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "backend"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "title": "Query Latency",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "id": 30,
+      "title": "Instant Query Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(promsketch_query_duration_seconds_bucket{type=\"instant\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(promsketch_query_duration_seconds_bucket{type=\"instant\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(promsketch_query_duration_seconds_bucket{type=\"instant\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "title": "Range Query Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(promsketch_query_duration_seconds_bucket{type=\"range\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(promsketch_query_duration_seconds_bucket{type=\"range\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(promsketch_query_duration_seconds_bucket{type=\"range\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "title": "Storage",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "collapsed": false
+    },
+    {
+      "id": 40,
+      "title": "Series Count",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "promsketch_storage_series_total",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "total series"
+        },
+        {
+          "expr": "promsketch_storage_sketched_series",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "sketched series"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "title": "Memory Usage vs Limit",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "promsketch_storage_memory_used_bytes",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "memory used"
+        },
+        {
+          "expr": "promsketch_storage_memory_limit_bytes",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "memory limit"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "title": "Storage Insert Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_storage_samples_inserted_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "inserts/s"
+        },
+        {
+          "expr": "rate(promsketch_storage_insert_errors_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "errors/s"
+        },
+        {
+          "expr": "rate(promsketch_storage_memory_rejections_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "rejections/s"
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "title": "Forwarder",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "collapsed": false
+    },
+    {
+      "id": 50,
+      "title": "Forward / Drop Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 42 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_forwarder_samples_forwarded_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "forwarded/s"
+        },
+        {
+          "expr": "rate(promsketch_forwarder_samples_dropped_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "dropped/s"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "title": "Batch Send Latency (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 42 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(promsketch_forwarder_batch_duration_seconds_bucket[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(promsketch_forwarder_batch_duration_seconds_bucket[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(promsketch_forwarder_batch_duration_seconds_bucket[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "title": "Queue Depth & Batch Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 42 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "promsketch_forwarder_queue_length",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "queue length"
+        },
+        {
+          "expr": "rate(promsketch_forwarder_batches_sent_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "batches sent/s"
+        },
+        {
+          "expr": "rate(promsketch_forwarder_batches_failed_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "batches failed/s"
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "title": "Errors",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "collapsed": false
+    },
+    {
+      "id": 60,
+      "title": "Error Rates (all components)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 51 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "rate(promsketch_ingestion_errors_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "ingestion errors"
+        },
+        {
+          "expr": "rate(promsketch_remotewrite_request_failures_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "remote write failures"
+        },
+        {
+          "expr": "sum(rate(promsketch_query_errors_total[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "query errors"
+        },
+        {
+          "expr": "rate(promsketch_storage_insert_errors_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "storage insert errors"
+        },
+        {
+          "expr": "rate(promsketch_forwarder_batches_failed_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "forwarder batch failures"
+        },
+        {
+          "expr": "rate(promsketch_metadata_errors_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "metadata errors"
+        },
+        {
+          "expr": "rate(promsketch_merger_errors_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "merger errors"
+        },
+        {
+          "expr": "rate(promsketch_insert_router_samples_failed_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "insert router failures"
+        },
+        {
+          "expr": "rate(promsketch_insert_router_rpcs_failed_total[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "legendFormat": "insert router RPC failures"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/promsketch/promsketch-dropin/internal/config"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 )
 
 // Forwarder batches and forwards samples to a backend
@@ -86,10 +87,12 @@ func (f *Forwarder) Forward(ts *prompb.TimeSeries) error {
 
 	select {
 	case f.batchCh <- copied:
+		metrics.ForwarderQueueLength.Set(float64(len(f.batchCh)))
 		return nil
 	default:
 		// Channel full, drop sample
 		f.metrics.samplesDropped.Add(1)
+		metrics.ForwarderSamplesDroppedTotal.Inc()
 		return fmt.Errorf("forwarder queue full, sample dropped")
 	}
 }
@@ -164,12 +167,15 @@ func (f *Forwarder) flush() {
 	err := f.sendBatch(batch)
 	if err != nil {
 		f.metrics.batchesFailed.Add(1)
+		metrics.ForwarderBatchesFailedTotal.Inc()
 		// In production, we might want to retry or log the error
 		return
 	}
 
 	f.metrics.batchesSent.Add(1)
+	metrics.ForwarderBatchesSentTotal.Inc()
 	f.metrics.samplesForwarded.Add(uint64(len(batch)))
+	metrics.ForwarderSamplesForwardedTotal.Add(float64(len(batch)))
 }
 
 // sendBatch sends a batch to the backend with retry logic
@@ -194,8 +200,10 @@ func (f *Forwarder) sendBatch(batch []*prompb.TimeSeries) error {
 		err := f.backend.Write(ctx, req)
 		cancel()
 
-		latency := time.Since(start).Milliseconds()
+		elapsed := time.Since(start)
+		latency := elapsed.Milliseconds()
 		f.metrics.forwardLatencyMs.Store(uint64(latency))
+		metrics.ForwarderBatchDuration.Observe(elapsed.Seconds())
 
 		if err == nil {
 			return nil

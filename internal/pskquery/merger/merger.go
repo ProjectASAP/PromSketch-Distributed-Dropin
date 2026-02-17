@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/promsketch/promsketch-dropin/api/psksketch/v1"
 	"github.com/promsketch/promsketch-dropin/internal/backend"
+	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	"github.com/promsketch/promsketch-dropin/internal/query/capabilities"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
@@ -104,6 +105,7 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 		atomic.AddUint64(&m.metrics.InstantQueryDurationUs, uint64(elapsed.Microseconds()))
 		atomic.AddUint64(&m.metrics.InstantQueryCount, 1)
 		m.instantLatency.Observe(elapsed.Seconds())
+		metrics.MergerQueryDuration.WithLabelValues("instant").Observe(elapsed.Seconds())
 	}()
 
 	// Parse the query
@@ -117,6 +119,7 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	if !capability.CanHandleWithSketches {
 		// Fall back to backend
 		atomic.AddUint64(&m.metrics.BackendQueries, 1)
+		metrics.MergerBackendQueriesTotal.Inc()
 		backendStart := time.Now()
 		result, err := m.backend.Query(ctx, query, ts)
 		m.observeBackendLatency(backendStart)
@@ -132,6 +135,7 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	}
 
 	atomic.AddUint64(&m.metrics.SketchQueries, 1)
+	metrics.MergerSketchQueriesTotal.Inc()
 
 	// Build labels from query
 	lbls := buildLabelsFromQuery(queryInfo)
@@ -205,6 +209,7 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	// If we got results, return them
 	if len(allSamples) > 0 {
 		atomic.AddUint64(&m.metrics.SketchHits, 1)
+		metrics.MergerSketchHitsTotal.Inc()
 		return &QueryResult{
 			Source:          "sketch",
 			Data:            allSamples,
@@ -215,12 +220,14 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 
 	// No sketch results - fall back to backend
 	atomic.AddUint64(&m.metrics.SketchMisses, 1)
+	metrics.MergerSketchMissesTotal.Inc()
 
 	if len(errs) > 0 {
 		log.Printf("All sketch nodes returned errors, falling back to backend: %v", errs[0])
 	}
 
 	atomic.AddUint64(&m.metrics.BackendQueries, 1)
+	metrics.MergerBackendQueriesTotal.Inc()
 	backendStart := time.Now()
 	result, err := m.backend.Query(ctx, query, ts)
 	m.observeBackendLatency(backendStart)
@@ -252,6 +259,7 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 		atomic.AddUint64(&m.metrics.RangeQueryDurationUs, uint64(elapsed.Microseconds()))
 		atomic.AddUint64(&m.metrics.RangeQueryCount, 1)
 		m.rangeLatency.Observe(elapsed.Seconds())
+		metrics.MergerQueryDuration.WithLabelValues("range").Observe(elapsed.Seconds())
 	}()
 
 	queryInfo, err := m.parser.Parse(query)
@@ -262,6 +270,7 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 	capability := m.capabilities.CanHandle(queryInfo)
 	if !capability.CanHandleWithSketches {
 		atomic.AddUint64(&m.metrics.BackendQueries, 1)
+		metrics.MergerBackendQueriesTotal.Inc()
 		backendStart := time.Now()
 		result, err := m.backend.QueryRange(ctx, query, start, end, step)
 		m.observeBackendLatency(backendStart)
@@ -277,6 +286,7 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 	}
 
 	atomic.AddUint64(&m.metrics.SketchQueries, 1)
+	metrics.MergerSketchQueriesTotal.Inc()
 
 	// Build labels from query
 	lbls := buildLabelsFromQuery(queryInfo)
@@ -346,6 +356,7 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 
 	if hasAnyResults {
 		atomic.AddUint64(&m.metrics.SketchHits, 1)
+		metrics.MergerSketchHitsTotal.Inc()
 		return &QueryResult{
 			Source:          "sketch",
 			Data:            allResults,
@@ -356,7 +367,9 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 
 	// Fall back to backend
 	atomic.AddUint64(&m.metrics.SketchMisses, 1)
+	metrics.MergerSketchMissesTotal.Inc()
 	atomic.AddUint64(&m.metrics.BackendQueries, 1)
+	metrics.MergerBackendQueriesTotal.Inc()
 	backendStart := time.Now()
 	result, err := m.backend.QueryRange(ctx, query, start, end, step)
 	m.observeBackendLatency(backendStart)
@@ -395,6 +408,7 @@ func (m *Merger) observeBackendLatency(start time.Time) {
 	atomic.AddUint64(&m.metrics.BackendQueryDurationUs, uint64(elapsed.Microseconds()))
 	atomic.AddUint64(&m.metrics.BackendQueryCount, 1)
 	m.backendLatency.Observe(elapsed.Seconds())
+	metrics.MergerBackendDuration.Observe(elapsed.Seconds())
 }
 
 // LatencyQuantiles returns quantile values for the given query type ("instant", "range", or "backend").
