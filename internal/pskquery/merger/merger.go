@@ -24,6 +24,13 @@ type MergerMetrics struct {
 	SketchHits     uint64
 	SketchMisses   uint64
 	MergeErrors    uint64
+	// Duration tracking (microseconds for atomic precision)
+	InstantQueryDurationUs uint64
+	InstantQueryCount      uint64
+	RangeQueryDurationUs   uint64
+	RangeQueryCount        uint64
+	BackendQueryDurationUs uint64
+	BackendQueryCount      uint64
 }
 
 // QueryResult represents the result of a query
@@ -49,6 +56,11 @@ type Merger struct {
 	queryTimeout time.Duration
 	metrics      MergerMetrics
 	querySem     chan struct{} // semaphore for MaxConcurrentQueries
+	// Quantile trackers for query latency (ring buffer of last 1000 observations)
+	instantLatency *QuantileTracker
+	rangeLatency   *QuantileTracker
+	// Backend (VictoriaMetrics) latency as observed from pskquery
+	backendLatency *QuantileTracker
 }
 
 // NewMerger creates a new query merger
@@ -64,12 +76,15 @@ func NewMerger(
 		maxConcurrentQueries = 100
 	}
 	return &Merger{
-		pool:         pool,
-		backend:      backend,
-		capabilities: capabilities,
-		parser:       parser,
-		queryTimeout: queryTimeout,
-		querySem:     make(chan struct{}, maxConcurrentQueries),
+		pool:           pool,
+		backend:        backend,
+		capabilities:   capabilities,
+		parser:         parser,
+		queryTimeout:   queryTimeout,
+		querySem:       make(chan struct{}, maxConcurrentQueries),
+		instantLatency: NewQuantileTracker(1000),
+		rangeLatency:   NewQuantileTracker(1000),
+		backendLatency: NewQuantileTracker(1000),
 	}
 }
 
@@ -84,6 +99,12 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	}
 
 	startTime := time.Now()
+	defer func() {
+		elapsed := time.Since(startTime)
+		atomic.AddUint64(&m.metrics.InstantQueryDurationUs, uint64(elapsed.Microseconds()))
+		atomic.AddUint64(&m.metrics.InstantQueryCount, 1)
+		m.instantLatency.Observe(elapsed.Seconds())
+	}()
 
 	// Parse the query
 	queryInfo, err := m.parser.Parse(query)
@@ -96,7 +117,9 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	if !capability.CanHandleWithSketches {
 		// Fall back to backend
 		atomic.AddUint64(&m.metrics.BackendQueries, 1)
+		backendStart := time.Now()
 		result, err := m.backend.Query(ctx, query, ts)
+		m.observeBackendLatency(backendStart)
 		if err != nil {
 			return nil, fmt.Errorf("backend query failed: %w", err)
 		}
@@ -198,7 +221,9 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	}
 
 	atomic.AddUint64(&m.metrics.BackendQueries, 1)
+	backendStart := time.Now()
 	result, err := m.backend.Query(ctx, query, ts)
+	m.observeBackendLatency(backendStart)
 	if err != nil {
 		return nil, fmt.Errorf("backend query failed: %w", err)
 	}
@@ -222,6 +247,12 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 	}
 
 	startExec := time.Now()
+	defer func() {
+		elapsed := time.Since(startExec)
+		atomic.AddUint64(&m.metrics.RangeQueryDurationUs, uint64(elapsed.Microseconds()))
+		atomic.AddUint64(&m.metrics.RangeQueryCount, 1)
+		m.rangeLatency.Observe(elapsed.Seconds())
+	}()
 
 	queryInfo, err := m.parser.Parse(query)
 	if err != nil {
@@ -231,7 +262,9 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 	capability := m.capabilities.CanHandle(queryInfo)
 	if !capability.CanHandleWithSketches {
 		atomic.AddUint64(&m.metrics.BackendQueries, 1)
+		backendStart := time.Now()
 		result, err := m.backend.QueryRange(ctx, query, start, end, step)
+		m.observeBackendLatency(backendStart)
 		if err != nil {
 			return nil, fmt.Errorf("backend range query failed: %w", err)
 		}
@@ -324,7 +357,9 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 	// Fall back to backend
 	atomic.AddUint64(&m.metrics.SketchMisses, 1)
 	atomic.AddUint64(&m.metrics.BackendQueries, 1)
+	backendStart := time.Now()
 	result, err := m.backend.QueryRange(ctx, query, start, end, step)
+	m.observeBackendLatency(backendStart)
 	if err != nil {
 		return nil, fmt.Errorf("backend range query failed: %w", err)
 	}
@@ -340,12 +375,44 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 // Metrics returns the current merger metrics
 func (m *Merger) Metrics() MergerMetrics {
 	return MergerMetrics{
-		SketchQueries:  atomic.LoadUint64(&m.metrics.SketchQueries),
-		BackendQueries: atomic.LoadUint64(&m.metrics.BackendQueries),
-		SketchHits:     atomic.LoadUint64(&m.metrics.SketchHits),
-		SketchMisses:   atomic.LoadUint64(&m.metrics.SketchMisses),
-		MergeErrors:    atomic.LoadUint64(&m.metrics.MergeErrors),
+		SketchQueries:         atomic.LoadUint64(&m.metrics.SketchQueries),
+		BackendQueries:        atomic.LoadUint64(&m.metrics.BackendQueries),
+		SketchHits:            atomic.LoadUint64(&m.metrics.SketchHits),
+		SketchMisses:          atomic.LoadUint64(&m.metrics.SketchMisses),
+		MergeErrors:           atomic.LoadUint64(&m.metrics.MergeErrors),
+		InstantQueryDurationUs: atomic.LoadUint64(&m.metrics.InstantQueryDurationUs),
+		InstantQueryCount:      atomic.LoadUint64(&m.metrics.InstantQueryCount),
+		RangeQueryDurationUs:   atomic.LoadUint64(&m.metrics.RangeQueryDurationUs),
+		RangeQueryCount:        atomic.LoadUint64(&m.metrics.RangeQueryCount),
+		BackendQueryDurationUs: atomic.LoadUint64(&m.metrics.BackendQueryDurationUs),
+		BackendQueryCount:      atomic.LoadUint64(&m.metrics.BackendQueryCount),
 	}
+}
+
+// observeBackendLatency records a backend query duration.
+func (m *Merger) observeBackendLatency(start time.Time) {
+	elapsed := time.Since(start)
+	atomic.AddUint64(&m.metrics.BackendQueryDurationUs, uint64(elapsed.Microseconds()))
+	atomic.AddUint64(&m.metrics.BackendQueryCount, 1)
+	m.backendLatency.Observe(elapsed.Seconds())
+}
+
+// LatencyQuantiles returns quantile values for the given query type ("instant", "range", or "backend").
+func (m *Merger) LatencyQuantiles(queryType string, quantiles []float64) []float64 {
+	var tracker *QuantileTracker
+	switch queryType {
+	case "instant":
+		tracker = m.instantLatency
+	case "backend":
+		tracker = m.backendLatency
+	default:
+		tracker = m.rangeLatency
+	}
+	result := make([]float64, len(quantiles))
+	for i, q := range quantiles {
+		result[i] = tracker.Quantile(q)
+	}
+	return result
 }
 
 // buildLabelsFromQuery constructs labels.Labels from QueryInfo

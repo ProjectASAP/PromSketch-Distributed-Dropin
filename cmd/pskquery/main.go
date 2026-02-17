@@ -29,13 +29,14 @@ var (
 )
 
 func main() {
-	var (
-		configFile  = flag.String("config.file", "pskquery.yaml", "Path to configuration file")
-		showVersion = flag.Bool("version", false, "Show version information")
-	)
+	configFile := flag.String("config.file", "pskquery.yaml", "Path to configuration file")
+	// Note: "version" flag may already be registered by VictoriaMetrics lib/buildinfo
+	if flag.CommandLine.Lookup("version") == nil {
+		flag.Bool("version", false, "Show version information")
+	}
 	flag.Parse()
 
-	if *showVersion {
+	if f := flag.CommandLine.Lookup("version"); f != nil && f.Value.String() == "true" {
 		fmt.Printf("pskquery\n")
 		fmt.Printf("  version:    %s\n", version)
 		fmt.Printf("  git commit: %s\n", gitCommit)
@@ -179,17 +180,57 @@ func main() {
 	mux.HandleFunc("/api/v1/labels", metadataAPI.ServeHTTP)
 	mux.HandleFunc("/api/v1/label/", metadataAPI.ServeHTTP)
 
-	// Metrics endpoint
+	// Metrics endpoint (Prometheus text exposition format)
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		m := queryMerger.Metrics()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"sketch_queries":  m.SketchQueries,
-			"backend_queries": m.BackendQueries,
-			"sketch_hits":     m.SketchHits,
-			"sketch_misses":   m.SketchMisses,
-			"merge_errors":    m.MergeErrors,
-		})
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		fmt.Fprintf(w, "# HELP pskquery_queries_total Total number of queries processed.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_queries_total counter\n")
+		fmt.Fprintf(w, "pskquery_queries_total{source=\"sketch\"} %d\n", m.SketchQueries)
+		fmt.Fprintf(w, "pskquery_queries_total{source=\"backend\"} %d\n", m.BackendQueries)
+		fmt.Fprintf(w, "# HELP pskquery_sketch_hits_total Queries answered by sketches.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_sketch_hits_total counter\n")
+		fmt.Fprintf(w, "pskquery_sketch_hits_total %d\n", m.SketchHits)
+		fmt.Fprintf(w, "# HELP pskquery_sketch_misses_total Queries that fell back to backend.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_sketch_misses_total counter\n")
+		fmt.Fprintf(w, "pskquery_sketch_misses_total %d\n", m.SketchMisses)
+		fmt.Fprintf(w, "# HELP pskquery_merge_errors_total Merge errors encountered.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_merge_errors_total counter\n")
+		fmt.Fprintf(w, "pskquery_merge_errors_total %d\n", m.MergeErrors)
+		fmt.Fprintf(w, "# HELP pskquery_query_duration_seconds_total Total time spent processing queries.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_query_duration_seconds_total counter\n")
+		fmt.Fprintf(w, "pskquery_query_duration_seconds_total{type=\"instant\"} %f\n", float64(m.InstantQueryDurationUs)/1e6)
+		fmt.Fprintf(w, "pskquery_query_duration_seconds_total{type=\"range\"} %f\n", float64(m.RangeQueryDurationUs)/1e6)
+		fmt.Fprintf(w, "# HELP pskquery_query_count_total Total number of queries by type.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_query_count_total counter\n")
+		fmt.Fprintf(w, "pskquery_query_count_total{type=\"instant\"} %d\n", m.InstantQueryCount)
+		fmt.Fprintf(w, "pskquery_query_count_total{type=\"range\"} %d\n", m.RangeQueryCount)
+		// Quantile summary for query latency (pskquery end-to-end)
+		quantiles := []float64{0.5, 0.9, 0.99}
+		fmt.Fprintf(w, "# HELP pskquery_query_duration_seconds Query latency quantiles over recent observations.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_query_duration_seconds summary\n")
+		for _, qtype := range []string{"instant", "range"} {
+			vals := queryMerger.LatencyQuantiles(qtype, quantiles)
+			for i, q := range quantiles {
+				fmt.Fprintf(w, "pskquery_query_duration_seconds{type=\"%s\",quantile=\"%.2f\"} %g\n", qtype, q, vals[i])
+			}
+			if qtype == "instant" {
+				fmt.Fprintf(w, "pskquery_query_duration_seconds_sum{type=\"%s\"} %f\n", qtype, float64(m.InstantQueryDurationUs)/1e6)
+				fmt.Fprintf(w, "pskquery_query_duration_seconds_count{type=\"%s\"} %d\n", qtype, m.InstantQueryCount)
+			} else {
+				fmt.Fprintf(w, "pskquery_query_duration_seconds_sum{type=\"%s\"} %f\n", qtype, float64(m.RangeQueryDurationUs)/1e6)
+				fmt.Fprintf(w, "pskquery_query_duration_seconds_count{type=\"%s\"} %d\n", qtype, m.RangeQueryCount)
+			}
+		}
+		// Backend (VictoriaMetrics) latency as measured from pskquery
+		fmt.Fprintf(w, "# HELP pskquery_backend_duration_seconds Backend query latency as observed by pskquery.\n")
+		fmt.Fprintf(w, "# TYPE pskquery_backend_duration_seconds summary\n")
+		bvals := queryMerger.LatencyQuantiles("backend", quantiles)
+		for i, q := range quantiles {
+			fmt.Fprintf(w, "pskquery_backend_duration_seconds{quantile=\"%.2f\"} %g\n", q, bvals[i])
+		}
+		fmt.Fprintf(w, "pskquery_backend_duration_seconds_sum %f\n", float64(m.BackendQueryDurationUs)/1e6)
+		fmt.Fprintf(w, "pskquery_backend_duration_seconds_count %d\n", m.BackendQueryCount)
 	})
 
 	httpServer := &http.Server{
@@ -270,10 +311,7 @@ func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
 		}
 	} else {
 		// Backend results are already in Prometheus format
-		data = map[string]interface{}{
-			"resultType": "vector",
-			"result":     result.Data,
-		}
+		data = result.Data
 	}
 
 	w.Header().Set("Content-Type", "application/json")

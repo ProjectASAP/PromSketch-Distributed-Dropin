@@ -34,13 +34,14 @@ var (
 )
 
 func main() {
-	var (
-		configFile  = flag.String("config.file", "pskinsert.yaml", "Path to configuration file")
-		showVersion = flag.Bool("version", false, "Show version information")
-	)
+	configFile := flag.String("config.file", "pskinsert.yaml", "Path to configuration file")
+	// Note: "version" flag may already be registered by VictoriaMetrics lib/buildinfo
+	if flag.CommandLine.Lookup("version") == nil {
+		flag.Bool("version", false, "Show version information")
+	}
 	flag.Parse()
 
-	if *showVersion {
+	if f := flag.CommandLine.Lookup("version"); f != nil && f.Value.String() == "true" {
 		fmt.Printf("pskinsert\n")
 		fmt.Printf("  version:    %s\n", version)
 		fmt.Printf("  git commit: %s\n", gitCommit)
