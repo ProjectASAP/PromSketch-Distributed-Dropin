@@ -22,3 +22,14 @@ datasources:
       httpMethod: POST
       timeInterval: 15s
     editable: true
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus-dashboard
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+    editable: true

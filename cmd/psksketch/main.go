@@ -88,14 +88,20 @@ func main() {
 	})
 	httpMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		metrics := stor.Metrics()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"node_id":          cfg.Node.ID,
-			"total_series":     metrics.TotalSeries,
-			"sketched_series":  metrics.SketchedSeries,
-			"samples_inserted": metrics.SamplesInserted,
-			"insert_errors":    metrics.SketchInsertErrors,
-		})
+		nodeID := cfg.Node.ID
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		fmt.Fprintf(w, "# HELP psksketch_total_series Total number of series tracked.\n")
+		fmt.Fprintf(w, "# TYPE psksketch_total_series gauge\n")
+		fmt.Fprintf(w, "psksketch_total_series{node_id=\"%s\"} %d\n", nodeID, metrics.TotalSeries)
+		fmt.Fprintf(w, "# HELP psksketch_sketched_series Number of series with active sketches.\n")
+		fmt.Fprintf(w, "# TYPE psksketch_sketched_series gauge\n")
+		fmt.Fprintf(w, "psksketch_sketched_series{node_id=\"%s\"} %d\n", nodeID, metrics.SketchedSeries)
+		fmt.Fprintf(w, "# HELP psksketch_samples_inserted_total Total samples inserted.\n")
+		fmt.Fprintf(w, "# TYPE psksketch_samples_inserted_total counter\n")
+		fmt.Fprintf(w, "psksketch_samples_inserted_total{node_id=\"%s\"} %d\n", nodeID, metrics.SamplesInserted)
+		fmt.Fprintf(w, "# HELP psksketch_insert_errors_total Total insert errors.\n")
+		fmt.Fprintf(w, "# TYPE psksketch_insert_errors_total counter\n")
+		fmt.Fprintf(w, "psksketch_insert_errors_total{node_id=\"%s\"} %d\n", nodeID, metrics.SketchInsertErrors)
 	})
 
 	httpServer := &http.Server{

@@ -176,16 +176,22 @@ func main() {
 		})
 	})
 
-	// Metrics endpoint
+	// Metrics endpoint (Prometheus text exposition format)
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		m := insertRouter.Metrics()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"samples_routed": m.SamplesRouted,
-			"samples_failed": m.SamplesFailed,
-			"rpcs_sent":      m.RPCsSent,
-			"rpcs_failed":    m.RPCsFailed,
-		})
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		fmt.Fprintf(w, "# HELP pskinsert_samples_routed_total Total samples routed to sketch nodes.\n")
+		fmt.Fprintf(w, "# TYPE pskinsert_samples_routed_total counter\n")
+		fmt.Fprintf(w, "pskinsert_samples_routed_total %d\n", m.SamplesRouted)
+		fmt.Fprintf(w, "# HELP pskinsert_samples_failed_total Total samples that failed routing.\n")
+		fmt.Fprintf(w, "# TYPE pskinsert_samples_failed_total counter\n")
+		fmt.Fprintf(w, "pskinsert_samples_failed_total %d\n", m.SamplesFailed)
+		fmt.Fprintf(w, "# HELP pskinsert_rpcs_sent_total Total gRPC insert RPCs sent.\n")
+		fmt.Fprintf(w, "# TYPE pskinsert_rpcs_sent_total counter\n")
+		fmt.Fprintf(w, "pskinsert_rpcs_sent_total %d\n", m.RPCsSent)
+		fmt.Fprintf(w, "# HELP pskinsert_rpcs_failed_total Total gRPC insert RPCs failed.\n")
+		fmt.Fprintf(w, "# TYPE pskinsert_rpcs_failed_total counter\n")
+		fmt.Fprintf(w, "pskinsert_rpcs_failed_total %d\n", m.RPCsFailed)
 	})
 
 	httpServer := &http.Server{

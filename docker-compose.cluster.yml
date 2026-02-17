@@ -140,6 +140,25 @@ services:
       - promsketch-cluster
     restart: unless-stopped
 
+  vmalert:
+    image: victoriametrics/vmalert:v1.96.0
+    volumes:
+      - ./docker/vmalert/rules.yml:/etc/vmalert/rules.yml:ro
+    command:
+      - "-rule=/etc/vmalert/rules.yml"
+      - "-datasource.url=http://pskquery:8480"
+      - "-remoteWrite.url=http://victoriametrics:8428"
+      - "-evaluationInterval=15s"
+      - "-httpListenAddr=:8880"
+    ports:
+      - "8880:8880"
+    depends_on:
+      - pskquery
+      - victoriametrics
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
   node-exporter:
     image: prom/node-exporter:v1.7.0
     ports:

@@ -107,14 +107,13 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if timeParam == "" {
 		ts = time.Now()
 	} else {
-		// Try parsing as Unix timestamp (float)
-		timeFloat, err := strconv.ParseFloat(timeParam, 64)
+		var err error
+		ts, err = parseTimestamp(timeParam)
 		if err != nil {
 			api.metrics.queryErrors.Add(1)
 			api.sendError(w, http.StatusBadRequest, "bad_data", "invalid time parameter")
 			return
 		}
-		ts = time.Unix(int64(timeFloat), 0)
 	}
 
 	// Execute query
@@ -155,22 +154,20 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse start time
-	startFloat, err := strconv.ParseFloat(startParam, 64)
+	start, err := parseTimestamp(startParam)
 	if err != nil {
 		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "invalid start parameter")
 		return
 	}
-	start := time.Unix(int64(startFloat), 0)
 
 	// Parse end time
-	endFloat, err := strconv.ParseFloat(endParam, 64)
+	end, err := parseTimestamp(endParam)
 	if err != nil {
 		api.metrics.queryRangeErrors.Add(1)
 		api.sendError(w, http.StatusBadRequest, "bad_data", "invalid end parameter")
 		return
 	}
-	end := time.Unix(int64(endFloat), 0)
 
 	// Parse step duration
 	step, err := parseDuration(stepParam)
@@ -354,6 +351,26 @@ func (api *QueryAPI) sendError(w http.ResponseWriter, statusCode int, errorType,
 
 // parseDuration parses a Prometheus-style duration string
 // Supports: s (seconds), m (minutes), h (hours), d (days), w (weeks), y (years)
+// parseTimestamp parses a Prometheus API timestamp string.
+// Accepts Unix timestamp (float seconds) or RFC3339 format.
+func parseTimestamp(s string) (time.Time, error) {
+	// Try Unix float first
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		sec := int64(f)
+		nsec := int64((f - float64(sec)) * 1e9)
+		return time.Unix(sec, nsec), nil
+	}
+	// Try RFC3339
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	// Try RFC3339Nano
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q as timestamp", s)
+}
+
 func parseDuration(s string) (time.Duration, error) {
 	// First try parsing as a number (seconds)
 	if num, err := strconv.ParseFloat(s, 64); err == nil {

@@ -1,0 +1,18 @@
+groups:
+  - name: sketch-eligible
+    interval: 15s
+    rules:
+      - record: sketch:node_cpu_p95:5m
+        expr: quantile_over_time(0.95, node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: sketch:node_cpu_avg:5m
+        expr: avg_over_time(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: sketch:node_cpu_p50:5m
+        expr: quantile_over_time(0.5, node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+
+  - name: backend-only
+    interval: 15s
+    rules:
+      - record: backend:node_cpu_rate:5m
+        expr: rate(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: backend:node_cpu_increase:5m
+        expr: increase(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])

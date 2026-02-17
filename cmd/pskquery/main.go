@@ -102,12 +102,12 @@ func main() {
 		if timeParam == "" {
 			ts = time.Now()
 		} else {
-			timeFloat, err := strconv.ParseFloat(timeParam, 64)
-			if err != nil {
+			var parseErr error
+			ts, parseErr = parseTimestamp(timeParam)
+			if parseErr != nil {
 				sendError(w, http.StatusBadRequest, "bad_data", "invalid time parameter")
 				return
 			}
-			ts = time.Unix(int64(timeFloat), 0)
 		}
 
 		result, err := queryMerger.Query(r.Context(), query, ts)
@@ -136,19 +136,17 @@ func main() {
 			return
 		}
 
-		startFloat, err := strconv.ParseFloat(startParam, 64)
+		start, err := parseTimestamp(startParam)
 		if err != nil {
 			sendError(w, http.StatusBadRequest, "bad_data", "invalid start parameter")
 			return
 		}
-		start := time.Unix(int64(startFloat), 0)
 
-		endFloat, err := strconv.ParseFloat(endParam, 64)
+		end, err := parseTimestamp(endParam)
 		if err != nil {
 			sendError(w, http.StatusBadRequest, "bad_data", "invalid end parameter")
 			return
 		}
-		end := time.Unix(int64(endFloat), 0)
 
 		step, err := parseDuration(stepParam)
 		if err != nil {
@@ -319,6 +317,21 @@ func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
 		Status: "success",
 		Data:   data,
 	})
+}
+
+func parseTimestamp(s string) (time.Time, error) {
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		sec := int64(f)
+		nsec := int64((f - float64(sec)) * 1e9)
+		return time.Unix(sec, nsec), nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q as timestamp", s)
 }
 
 func parseDuration(s string) (time.Duration, error) {

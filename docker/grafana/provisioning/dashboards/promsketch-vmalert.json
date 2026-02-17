@@ -1,0 +1,410 @@
+{
+  "uid": "promsketch-vmalert",
+  "title": "PromSketch vmalert — Recording Rules Demo",
+  "tags": ["promsketch", "vmalert", "e2e"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Query Latency — PromSketch vs VictoriaMetrics (p50/p90/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [
+              { "id": "displayName", "value": "PromSketch p50" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "displayName", "value": "PromSketch p90" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "displayName", "value": "PromSketch p99" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "super-light-blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "D" },
+            "properties": [
+              { "id": "displayName", "value": "VictoriaMetrics p50" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "E" },
+            "properties": [
+              { "id": "displayName", "value": "VictoriaMetrics p90" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-orange" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "F" },
+            "properties": [
+              { "id": "displayName", "value": "VictoriaMetrics p99" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "super-light-orange" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.50\"}",
+          "legendFormat": "PromSketch p50"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.90\"}",
+          "legendFormat": "PromSketch p90"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.99\"}",
+          "legendFormat": "PromSketch p99"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_backend_duration_seconds{quantile=\"0.50\"}",
+          "legendFormat": "VictoriaMetrics p50"
+        },
+        {
+          "refId": "E",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_backend_duration_seconds{quantile=\"0.90\"}",
+          "legendFormat": "VictoriaMetrics p90"
+        },
+        {
+          "refId": "F",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_backend_duration_seconds{quantile=\"0.99\"}",
+          "legendFormat": "VictoriaMetrics p99"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Recording Rule Results — Sketch vs Backend",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [
+              { "id": "displayName", "value": "sketch:node_cpu_p95:5m (via PromSketch)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "displayName", "value": "sketch:node_cpu_avg:5m (via PromSketch)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "displayName", "value": "backend:node_cpu_rate:5m (via VM)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "D" },
+            "properties": [
+              { "id": "displayName", "value": "VM direct: quantile_over_time(0.95,...)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
+          "expr": "sketch:node_cpu_p95:5m",
+          "legendFormat": "sketch p95"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
+          "expr": "sketch:node_cpu_avg:5m",
+          "legendFormat": "sketch avg"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
+          "expr": "backend:node_cpu_rate:5m",
+          "legendFormat": "backend rate"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
+          "expr": "quantile_over_time(0.95, node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "legendFormat": "VM direct p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Ingested Series — PromSketch",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "blue", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "promsketch-dashboard" },
+          "expr": "count(node_cpu_seconds_total)",
+          "legendFormat": "PromSketch series",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Ingested Series — VictoriaMetrics",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
+          "expr": "count(node_cpu_seconds_total)",
+          "legendFormat": "VM series",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total Queries (pskquery)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "purple", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_query_count_total{type=\"instant\"} + pskquery_query_count_total{type=\"range\"}",
+          "legendFormat": "total queries",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Total Samples Routed (pskinsert)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskinsert_samples_routed_total",
+          "legendFormat": "samples routed",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Sketch Hits vs Misses (pskquery)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [
+              { "id": "displayName", "value": "Sketch Hits" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "displayName", "value": "Sketch Misses" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_sketch_hits_total",
+          "legendFormat": "hits"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "pskquery_sketch_misses_total",
+          "legendFormat": "misses"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "vmalert Rule Evaluations",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [
+              { "id": "displayName", "value": "sketch-eligible group" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "displayName", "value": "backend-only group" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "vmalert_iteration_total{group=\"sketch-eligible\"}",
+          "legendFormat": "sketch-eligible evals"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-dashboard" },
+          "expr": "vmalert_iteration_total{group=\"backend-only\"}",
+          "legendFormat": "backend-only evals"
+        }
+      ]
+    }
+  ],
+  "templating": { "list": [] },
+  "schemaVersion": 39,
+  "version": 1
+}
