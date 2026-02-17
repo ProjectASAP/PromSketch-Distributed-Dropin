@@ -30,10 +30,28 @@ func TestRegistry_CanHandle_SupportedFunctions(t *testing.T) {
 			expectedFunction: "sum_over_time",
 		},
 		{
+			name:             "sum2_over_time",
+			query:            `sum2_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "sum2_over_time",
+		},
+		{
 			name:             "count_over_time",
 			query:            `count_over_time(http_requests_total[5m])`,
 			shouldHandle:     true,
 			expectedFunction: "count_over_time",
+		},
+		{
+			name:             "stddev_over_time",
+			query:            `stddev_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "stddev_over_time",
+		},
+		{
+			name:             "stdvar_over_time",
+			query:            `stdvar_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "stdvar_over_time",
 		},
 		{
 			name:                  "quantile_over_time",
@@ -41,6 +59,42 @@ func TestRegistry_CanHandle_SupportedFunctions(t *testing.T) {
 			shouldHandle:          true,
 			expectedFunction:      "quantile_over_time",
 			expectedRequiresQuant: true,
+		},
+		{
+			name:             "min_over_time",
+			query:            `min_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "min_over_time",
+		},
+		{
+			name:             "max_over_time",
+			query:            `max_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "max_over_time",
+		},
+		{
+			name:             "entropy_over_time",
+			query:            `entropy_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "entropy_over_time",
+		},
+		{
+			name:             "distinct_over_time",
+			query:            `distinct_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "distinct_over_time",
+		},
+		{
+			name:             "l1_over_time",
+			query:            `l1_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "l1_over_time",
+		},
+		{
+			name:             "l2_over_time",
+			query:            `l2_over_time(http_requests_total[5m])`,
+			shouldHandle:     true,
+			expectedFunction: "l2_over_time",
 		},
 	}
 
@@ -135,8 +189,17 @@ func TestRegistry_GetSupportedFunctions(t *testing.T) {
 	expectedFunctions := map[string]bool{
 		"avg_over_time":      true,
 		"sum_over_time":      true,
+		"sum2_over_time":     true,
 		"count_over_time":    true,
+		"stddev_over_time":   true,
+		"stdvar_over_time":   true,
 		"quantile_over_time": true,
+		"min_over_time":      true,
+		"max_over_time":      true,
+		"entropy_over_time":  true,
+		"distinct_over_time": true,
+		"l1_over_time":       true,
+		"l2_over_time":       true,
 	}
 
 	if len(functions) != len(expectedFunctions) {
@@ -159,8 +222,17 @@ func TestRegistry_IsSupportedFunction(t *testing.T) {
 	}{
 		{"avg_over_time", true},
 		{"sum_over_time", true},
+		{"sum2_over_time", true},
 		{"count_over_time", true},
+		{"stddev_over_time", true},
+		{"stdvar_over_time", true},
 		{"quantile_over_time", true},
+		{"min_over_time", true},
+		{"max_over_time", true},
+		{"entropy_over_time", true},
+		{"distinct_over_time", true},
+		{"l1_over_time", true},
+		{"l2_over_time", true},
 		{"rate", false},
 		{"increase", false},
 		{"histogram_quantile", false},

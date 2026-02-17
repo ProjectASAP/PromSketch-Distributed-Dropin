@@ -22,10 +22,22 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return &Registry{
 		supportedFunctions: map[string]bool{
-			"avg_over_time":      true,
-			"sum_over_time":      true,
-			"count_over_time":    true,
+			// USampling-backed functions
+			"avg_over_time":    true,
+			"sum_over_time":    true,
+			"sum2_over_time":   true,
+			"count_over_time":  true,
+			"stddev_over_time": true,
+			"stdvar_over_time": true,
+			// EHKLL-backed functions
 			"quantile_over_time": true,
+			"min_over_time":      true,
+			"max_over_time":      true,
+			// EHUniv-backed functions
+			"entropy_over_time":  true,
+			"distinct_over_time": true,
+			"l1_over_time":       true,
+			"l2_over_time":       true,
 		},
 	}
 }

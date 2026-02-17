@@ -202,13 +202,26 @@ func (s *Storage) createSketchInstance(ps *promsketch.PromSketches, lbls sketchl
 		windowSize = target.EHParams.WindowSize
 	}
 
-	// Create sketch instances for common query functions
-	// In production, this could be configurable per target
+	// Create sketch instances for all supported query functions.
+	// The promsketch library deduplicates by underlying sketch type
+	// (USampling, EHKLL, EHUniv), so listing all functions is safe.
 	functions := []string{
+		// USampling-backed
 		"avg_over_time",
 		"sum_over_time",
+		"sum2_over_time",
 		"count_over_time",
+		"stddev_over_time",
+		"stdvar_over_time",
+		// EHKLL-backed
 		"quantile_over_time",
+		"min_over_time",
+		"max_over_time",
+		// EHUniv-backed
+		"entropy_over_time",
+		"distinct_over_time",
+		"l1_over_time",
+		"l2_over_time",
 	}
 
 	for _, funcName := range functions {
