@@ -42,10 +42,16 @@ type QueryResult struct {
 	ExecutionTimeMs float64
 }
 
-// SketchVector represents a sketch query result (parallel to promsketch.Vector)
+// SketchSample is a single sketch query result.
 type SketchSample struct {
 	T int64
 	F float64
+}
+
+// SketchSeriesResult groups a matched series' full labels with its computed samples.
+type SketchSeriesResult struct {
+	Labels  map[string]string
+	Samples []SketchSample
 }
 
 // Merger fans out queries to all psksketch nodes and merges results
@@ -157,9 +163,9 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 	// Fan-out to all psksketch nodes in parallel
 	clients := m.pool.AllClients()
 	type nodeResult struct {
-		nodeID  string
-		samples []*pb.Sample
-		err     error
+		nodeID string
+		series []*pb.EvalResultSeries
+		err    error
 	}
 
 	resultsCh := make(chan nodeResult, len(clients))
@@ -187,12 +193,12 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 				resultsCh <- nodeResult{nodeID: id, err: fmt.Errorf("%s", resp.Error)}
 				return
 			}
-			resultsCh <- nodeResult{nodeID: id, samples: resp.Samples}
+			resultsCh <- nodeResult{nodeID: id, series: resp.Series}
 		}(nodeID, c)
 	}
 
-	// Collect results
-	var allSamples []SketchSample
+	// Collect results — merge per-series results from all nodes
+	var allSeriesResults []SketchSeriesResult
 	var errs []error
 
 	for i := 0; i < len(clients); i++ {
@@ -201,18 +207,29 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 			errs = append(errs, res.err)
 			continue
 		}
-		for _, s := range res.samples {
-			allSamples = append(allSamples, SketchSample{T: s.Timestamp, F: s.Value})
+		for _, s := range res.series {
+			lblMap := make(map[string]string, len(s.Labels))
+			for _, l := range s.Labels {
+				lblMap[l.Name] = l.Value
+			}
+			samples := make([]SketchSample, 0, len(s.Samples))
+			for _, sample := range s.Samples {
+				samples = append(samples, SketchSample{T: sample.Timestamp, F: sample.Value})
+			}
+			allSeriesResults = append(allSeriesResults, SketchSeriesResult{
+				Labels:  lblMap,
+				Samples: samples,
+			})
 		}
 	}
 
 	// If we got results, return them
-	if len(allSamples) > 0 {
+	if len(allSeriesResults) > 0 {
 		atomic.AddUint64(&m.metrics.SketchHits, 1)
 		metrics.MergerSketchHitsTotal.Inc()
 		return &QueryResult{
 			Source:          "sketch",
-			Data:            allSamples,
+			Data:            allSeriesResults,
 			QueryInfo:       queryInfo,
 			ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 		}, nil

@@ -81,9 +81,16 @@ message Sample {
   double value = 2;
 }
 
+// EvalResultSeries pairs a matched series' full labels with its computed samples.
+message EvalResultSeries {
+  repeated Label labels = 1;
+  repeated Sample samples = 2;
+}
+
 message EvalResponse {
-  repeated Sample samples = 1;
+  repeated Sample samples = 1;      // deprecated: flat samples (no labels)
   string error = 2;
+  repeated EvalResultSeries series = 3;  // per-series results with full labels
 }
 
 message HealthRequest {}

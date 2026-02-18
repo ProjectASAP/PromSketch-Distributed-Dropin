@@ -121,20 +121,25 @@ func (s *SketchServer) LookUp(ctx context.Context, req *pb.LookUpRequest) (*pb.L
 // Eval implements SketchService.Eval
 func (s *SketchServer) Eval(ctx context.Context, req *pb.EvalRequest) (*pb.EvalResponse, error) {
 	lbls := pbLabelsToPromLabels(req.Labels)
-	result, err := s.storage.Eval(req.FuncName, lbls, req.OtherArgs, req.MinTime, req.MaxTime, req.CurTime)
+	seriesResults, err := s.storage.EvalWithLabels(req.FuncName, lbls, req.OtherArgs, req.MinTime, req.MaxTime, req.CurTime)
 	if err != nil {
 		return &pb.EvalResponse{Error: err.Error()}, nil
 	}
 
-	samples := make([]*pb.Sample, 0, len(result))
-	for _, s := range result {
-		samples = append(samples, &pb.Sample{
-			Timestamp: s.T,
-			Value:     s.F,
-		})
+	pbSeries := make([]*pb.EvalResultSeries, 0, len(seriesResults))
+	for _, sr := range seriesResults {
+		pbLabels := make([]*pb.Label, 0, len(sr.Labels))
+		for _, l := range sr.Labels {
+			pbLabels = append(pbLabels, &pb.Label{Name: l.Name, Value: l.Value})
+		}
+		samples := make([]*pb.Sample, 0, len(sr.Samples))
+		for _, s := range sr.Samples {
+			samples = append(samples, &pb.Sample{Timestamp: s.T, Value: s.F})
+		}
+		pbSeries = append(pbSeries, &pb.EvalResultSeries{Labels: pbLabels, Samples: samples})
 	}
 
-	return &pb.EvalResponse{Samples: samples}, nil
+	return &pb.EvalResponse{Series: pbSeries}, nil
 }
 
 // Health implements SketchService.Health
@@ -160,14 +165,16 @@ func (s *SketchServer) Stats(ctx context.Context, req *pb.StatsRequest) (*pb.Sta
 	}, nil
 }
 
-// pbLabelsToPromLabels converts protobuf labels to Prometheus labels
+// pbLabelsToPromLabels converts protobuf labels to Prometheus labels.
+// Uses promlabels.New() to ensure labels are sorted by name, which is
+// required for consistent hashing and equality checks.
 func pbLabelsToPromLabels(pbLabels []*pb.Label) promlabels.Labels {
-	lbls := make(promlabels.Labels, 0, len(pbLabels))
+	lbls := make([]promlabels.Label, 0, len(pbLabels))
 	for _, l := range pbLabels {
 		lbls = append(lbls, promlabels.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})
 	}
-	return lbls
+	return promlabels.New(lbls...)
 }

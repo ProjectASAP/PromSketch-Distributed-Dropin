@@ -237,20 +237,21 @@ func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
 	var data interface{}
 
 	if result.Source == "sketch" {
-		// Convert sketch samples to Prometheus format
-		if samples, ok := result.Data.([]merger.SketchSample); ok {
-			// Build label map from query
-			labels := make(map[string]string)
-			if result.QueryInfo != nil && result.QueryInfo.MetricName != "" {
-				labels["__name__"] = result.QueryInfo.MetricName
-			}
-
+		// Convert sketch series results to Prometheus format
+		if seriesResults, ok := result.Data.([]merger.SketchSeriesResult); ok {
 			resultItems := make([]map[string]interface{}, 0)
-			for _, s := range samples {
-				resultItems = append(resultItems, map[string]interface{}{
-					"metric": labels,
-					"value":  []interface{}{float64(s.T) / 1000.0, fmt.Sprintf("%f", s.F)},
-				})
+			for _, sr := range seriesResults {
+				for _, s := range sr.Samples {
+					ts := float64(s.T) / 1000.0
+					if ts == 0 && result.QueryInfo != nil {
+						// Use query timestamp for instant queries where sketch returns T=0
+						ts = float64(time.Now().UnixMilli()) / 1000.0
+					}
+					resultItems = append(resultItems, map[string]interface{}{
+						"metric": sr.Labels,
+						"value":  []interface{}{ts, fmt.Sprintf("%f", s.F)},
+					})
+				}
 			}
 
 			data = map[string]interface{}{
@@ -258,7 +259,7 @@ func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
 				"result":     resultItems,
 			}
 		} else {
-			// Range query results
+			// Range query results or legacy format
 			data = result.Data
 		}
 	} else {

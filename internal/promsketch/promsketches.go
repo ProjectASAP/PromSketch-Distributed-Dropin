@@ -256,6 +256,41 @@ func (s *sketchSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
+// getByLabelSubset returns all stored series whose labels contain every
+// label in the given subset. This enables queries with partial labels
+// (e.g., {__name__="m", cpu="0"}) to match stored series that have
+// additional labels (instance, job, etc.).
+func (s *sketchSeries) getByLabelSubset(subset labels.Labels) []*memSeries {
+	var matches []*memSeries
+	for i := 0; i < s.size; i++ {
+		s.locks[i].RLock()
+		for _, series := range s.hashes[i].unique {
+			if labelsContainAll(series.lset, subset) {
+				matches = append(matches, series)
+			}
+		}
+		for _, bucket := range s.hashes[i].conflicts {
+			for _, series := range bucket {
+				if labelsContainAll(series.lset, subset) {
+					matches = append(matches, series)
+				}
+			}
+		}
+		s.locks[i].RUnlock()
+	}
+	return matches
+}
+
+// labelsContainAll returns true if 'full' contains every label in 'subset'.
+func labelsContainAll(full, subset labels.Labels) bool {
+	for _, required := range subset {
+		if full.Get(required.Name) != required.Value {
+			return false
+		}
+	}
+	return true
+}
+
 type TSId int
 
 func newSlidingHistorgrams(s *memSeries, stype SketchType, sc *SketchConfig) error {
@@ -384,7 +419,7 @@ func (ps *PromSketches) NewSketchCacheInstance(lset labels.Labels, funcName stri
 		case EHUniv:
 			sc.EH_univ_config = EHUnivConfig{K: 50, Time_window_size: time_window_size}
 		case USampling:
-			sc.Sampling_config = SamplingConfig{Sampling_rate: 0.2, Time_window_size: time_window_size, Max_size: int(float64(item_window_size) * 0.2)}
+			sc.Sampling_config = SamplingConfig{Sampling_rate: 0.5, Time_window_size: time_window_size, Max_size: int(float64(item_window_size) * 0.5)}
 		case EHKLL:
 			sc.EH_kll_config = EHKLLConfig{K: 50, Time_window_size: time_window_size, Kll_k: 256}
 			/*
@@ -581,12 +616,59 @@ func (ps *PromSketches) LookUpAndUpdateWindow(lset labels.Labels, funcName strin
 
 func (ps *PromSketches) Eval(funcName string, lset labels.Labels, otherArgs float64, mint, maxt, cur_time int64) (Vector, annotations.Annotations) {
 	sfunc := FunctionCalls[funcName]
+
+	// Try exact hash lookup first (fast path for full label sets).
 	series := ps.series.getByHash(lset.Hash(), lset)
-	if series == nil {
+	if series != nil {
+		return sfunc(context.TODO(), series, otherArgs, mint, maxt, cur_time), nil
+	}
+
+	// Fall back to matcher-based lookup: find all stored series whose labels
+	// are a superset of the query labels. This handles the common case where
+	// the query specifies partial labels (e.g., {__name__="x", cpu="0"})
+	// but stored series have additional labels (instance, job, etc.).
+	matches := ps.series.getByLabelSubset(lset)
+	if len(matches) == 0 {
 		return nil, annotations.New().Add(fmt.Errorf("no series found for labels %s", lset.String()))
 	}
 
-	return sfunc(context.TODO(), series, otherArgs, mint, maxt, cur_time), nil
+	var result Vector
+	for _, s := range matches {
+		v := sfunc(context.TODO(), s, otherArgs, mint, maxt, cur_time)
+		result = append(result, v...)
+	}
+	return result, nil
+}
+
+// SeriesEvalResult pairs a matched series' full labels with its computed samples.
+type SeriesEvalResult struct {
+	Labels  labels.Labels
+	Samples Vector
+}
+
+// EvalWithLabels is like Eval but returns per-series results with full labels.
+func (ps *PromSketches) EvalWithLabels(funcName string, lset labels.Labels, otherArgs float64, mint, maxt, cur_time int64) ([]SeriesEvalResult, annotations.Annotations) {
+	sfunc := FunctionCalls[funcName]
+
+	// Try exact hash lookup first.
+	series := ps.series.getByHash(lset.Hash(), lset)
+	if series != nil {
+		v := sfunc(context.TODO(), series, otherArgs, mint, maxt, cur_time)
+		return []SeriesEvalResult{{Labels: series.lset, Samples: v}}, nil
+	}
+
+	// Fall back to matcher-based lookup.
+	matches := ps.series.getByLabelSubset(lset)
+	if len(matches) == 0 {
+		return nil, annotations.New().Add(fmt.Errorf("no series found for labels %s", lset.String()))
+	}
+
+	results := make([]SeriesEvalResult, 0, len(matches))
+	for _, s := range matches {
+		v := sfunc(context.TODO(), s, otherArgs, mint, maxt, cur_time)
+		results = append(results, SeriesEvalResult{Labels: s.lset, Samples: v})
+	}
+	return results, nil
 }
 
 func (ps *PromSketches) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {

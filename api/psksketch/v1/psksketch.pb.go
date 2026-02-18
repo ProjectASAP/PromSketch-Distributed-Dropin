@@ -589,17 +589,71 @@ func (x *Sample) GetValue() float64 {
 	return 0
 }
 
+// EvalResultSeries pairs a matched series' full labels with its computed samples.
+type EvalResultSeries struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Labels        []*Label               `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
+	Samples       []*Sample              `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EvalResultSeries) Reset() {
+	*x = EvalResultSeries{}
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EvalResultSeries) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EvalResultSeries) ProtoMessage() {}
+
+func (x *EvalResultSeries) ProtoReflect() protoreflect.Message {
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EvalResultSeries.ProtoReflect.Descriptor instead.
+func (*EvalResultSeries) Descriptor() ([]byte, []int) {
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *EvalResultSeries) GetLabels() []*Label {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *EvalResultSeries) GetSamples() []*Sample {
+	if x != nil {
+		return x.Samples
+	}
+	return nil
+}
+
 type EvalResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Samples       []*Sample              `protobuf:"bytes,1,rep,name=samples,proto3" json:"samples,omitempty"`
+	Samples       []*Sample              `protobuf:"bytes,1,rep,name=samples,proto3" json:"samples,omitempty"` // deprecated: flat samples (no labels)
 	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Series        []*EvalResultSeries    `protobuf:"bytes,3,rep,name=series,proto3" json:"series,omitempty"` // per-series results with full labels
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EvalResponse) Reset() {
 	*x = EvalResponse{}
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[10]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +665,7 @@ func (x *EvalResponse) String() string {
 func (*EvalResponse) ProtoMessage() {}
 
 func (x *EvalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[10]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +678,7 @@ func (x *EvalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvalResponse.ProtoReflect.Descriptor instead.
 func (*EvalResponse) Descriptor() ([]byte, []int) {
-	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{10}
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EvalResponse) GetSamples() []*Sample {
@@ -641,6 +695,13 @@ func (x *EvalResponse) GetError() string {
 	return ""
 }
 
+func (x *EvalResponse) GetSeries() []*EvalResultSeries {
+	if x != nil {
+		return x.Series
+	}
+	return nil
+}
+
 type HealthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -649,7 +710,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[11]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +722,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[11]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +735,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{11}
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{12}
 }
 
 type HealthResponse struct {
@@ -689,7 +750,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[12]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -701,7 +762,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[12]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -714,7 +775,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{12}
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *HealthResponse) GetHealthy() bool {
@@ -753,7 +814,7 @@ type StatsRequest struct {
 
 func (x *StatsRequest) Reset() {
 	*x = StatsRequest{}
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[13]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +826,7 @@ func (x *StatsRequest) String() string {
 func (*StatsRequest) ProtoMessage() {}
 
 func (x *StatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[13]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +839,7 @@ func (x *StatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsRequest.ProtoReflect.Descriptor instead.
 func (*StatsRequest) Descriptor() ([]byte, []int) {
-	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{13}
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{14}
 }
 
 type StatsResponse struct {
@@ -795,7 +856,7 @@ type StatsResponse struct {
 
 func (x *StatsResponse) Reset() {
 	*x = StatsResponse{}
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[14]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -807,7 +868,7 @@ func (x *StatsResponse) String() string {
 func (*StatsResponse) ProtoMessage() {}
 
 func (x *StatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[14]
+	mi := &file_api_psksketch_v1_psksketch_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -820,7 +881,7 @@ func (x *StatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsResponse.ProtoReflect.Descriptor instead.
 func (*StatsResponse) Descriptor() ([]byte, []int) {
-	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{14}
+	return file_api_psksketch_v1_psksketch_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *StatsResponse) GetNodeId() string {
@@ -909,10 +970,14 @@ const file_api_psksketch_v1_psksketch_proto_rawDesc = "" +
 	"\bcur_time\x18\x06 \x01(\x03R\acurTime\"<\n" +
 	"\x06Sample\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"T\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"o\n" +
+	"\x10EvalResultSeries\x12+\n" +
+	"\x06labels\x18\x01 \x03(\v2\x13.psksketch.v1.LabelR\x06labels\x12.\n" +
+	"\asamples\x18\x02 \x03(\v2\x14.psksketch.v1.SampleR\asamples\"\x8c\x01\n" +
 	"\fEvalResponse\x12.\n" +
 	"\asamples\x18\x01 \x03(\v2\x14.psksketch.v1.SampleR\asamples\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\x0f\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x126\n" +
+	"\x06series\x18\x03 \x03(\v2\x1e.psksketch.v1.EvalResultSeriesR\x06series\"\x0f\n" +
 	"\rHealthRequest\"\x84\x01\n" +
 	"\x0eHealthResponse\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x18\n" +
@@ -947,7 +1012,7 @@ func file_api_psksketch_v1_psksketch_proto_rawDescGZIP() []byte {
 	return file_api_psksketch_v1_psksketch_proto_rawDescData
 }
 
-var file_api_psksketch_v1_psksketch_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_api_psksketch_v1_psksketch_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_api_psksketch_v1_psksketch_proto_goTypes = []any{
 	(*Label)(nil),               // 0: psksketch.v1.Label
 	(*InsertRequest)(nil),       // 1: psksketch.v1.InsertRequest
@@ -959,11 +1024,12 @@ var file_api_psksketch_v1_psksketch_proto_goTypes = []any{
 	(*LookUpResponse)(nil),      // 7: psksketch.v1.LookUpResponse
 	(*EvalRequest)(nil),         // 8: psksketch.v1.EvalRequest
 	(*Sample)(nil),              // 9: psksketch.v1.Sample
-	(*EvalResponse)(nil),        // 10: psksketch.v1.EvalResponse
-	(*HealthRequest)(nil),       // 11: psksketch.v1.HealthRequest
-	(*HealthResponse)(nil),      // 12: psksketch.v1.HealthResponse
-	(*StatsRequest)(nil),        // 13: psksketch.v1.StatsRequest
-	(*StatsResponse)(nil),       // 14: psksketch.v1.StatsResponse
+	(*EvalResultSeries)(nil),    // 10: psksketch.v1.EvalResultSeries
+	(*EvalResponse)(nil),        // 11: psksketch.v1.EvalResponse
+	(*HealthRequest)(nil),       // 12: psksketch.v1.HealthRequest
+	(*HealthResponse)(nil),      // 13: psksketch.v1.HealthResponse
+	(*StatsRequest)(nil),        // 14: psksketch.v1.StatsRequest
+	(*StatsResponse)(nil),       // 15: psksketch.v1.StatsResponse
 }
 var file_api_psksketch_v1_psksketch_proto_depIdxs = []int32{
 	0,  // 0: psksketch.v1.InsertRequest.labels:type_name -> psksketch.v1.Label
@@ -972,24 +1038,27 @@ var file_api_psksketch_v1_psksketch_proto_depIdxs = []int32{
 	9,  // 3: psksketch.v1.TimeSeries.samples:type_name -> psksketch.v1.Sample
 	0,  // 4: psksketch.v1.LookUpRequest.labels:type_name -> psksketch.v1.Label
 	0,  // 5: psksketch.v1.EvalRequest.labels:type_name -> psksketch.v1.Label
-	9,  // 6: psksketch.v1.EvalResponse.samples:type_name -> psksketch.v1.Sample
-	1,  // 7: psksketch.v1.SketchService.Insert:input_type -> psksketch.v1.InsertRequest
-	3,  // 8: psksketch.v1.SketchService.BatchInsert:input_type -> psksketch.v1.BatchInsertRequest
-	6,  // 9: psksketch.v1.SketchService.LookUp:input_type -> psksketch.v1.LookUpRequest
-	8,  // 10: psksketch.v1.SketchService.Eval:input_type -> psksketch.v1.EvalRequest
-	11, // 11: psksketch.v1.SketchService.Health:input_type -> psksketch.v1.HealthRequest
-	13, // 12: psksketch.v1.SketchService.Stats:input_type -> psksketch.v1.StatsRequest
-	2,  // 13: psksketch.v1.SketchService.Insert:output_type -> psksketch.v1.InsertResponse
-	5,  // 14: psksketch.v1.SketchService.BatchInsert:output_type -> psksketch.v1.BatchInsertResponse
-	7,  // 15: psksketch.v1.SketchService.LookUp:output_type -> psksketch.v1.LookUpResponse
-	10, // 16: psksketch.v1.SketchService.Eval:output_type -> psksketch.v1.EvalResponse
-	12, // 17: psksketch.v1.SketchService.Health:output_type -> psksketch.v1.HealthResponse
-	14, // 18: psksketch.v1.SketchService.Stats:output_type -> psksketch.v1.StatsResponse
-	13, // [13:19] is the sub-list for method output_type
-	7,  // [7:13] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	0,  // 6: psksketch.v1.EvalResultSeries.labels:type_name -> psksketch.v1.Label
+	9,  // 7: psksketch.v1.EvalResultSeries.samples:type_name -> psksketch.v1.Sample
+	9,  // 8: psksketch.v1.EvalResponse.samples:type_name -> psksketch.v1.Sample
+	10, // 9: psksketch.v1.EvalResponse.series:type_name -> psksketch.v1.EvalResultSeries
+	1,  // 10: psksketch.v1.SketchService.Insert:input_type -> psksketch.v1.InsertRequest
+	3,  // 11: psksketch.v1.SketchService.BatchInsert:input_type -> psksketch.v1.BatchInsertRequest
+	6,  // 12: psksketch.v1.SketchService.LookUp:input_type -> psksketch.v1.LookUpRequest
+	8,  // 13: psksketch.v1.SketchService.Eval:input_type -> psksketch.v1.EvalRequest
+	12, // 14: psksketch.v1.SketchService.Health:input_type -> psksketch.v1.HealthRequest
+	14, // 15: psksketch.v1.SketchService.Stats:input_type -> psksketch.v1.StatsRequest
+	2,  // 16: psksketch.v1.SketchService.Insert:output_type -> psksketch.v1.InsertResponse
+	5,  // 17: psksketch.v1.SketchService.BatchInsert:output_type -> psksketch.v1.BatchInsertResponse
+	7,  // 18: psksketch.v1.SketchService.LookUp:output_type -> psksketch.v1.LookUpResponse
+	11, // 19: psksketch.v1.SketchService.Eval:output_type -> psksketch.v1.EvalResponse
+	13, // 20: psksketch.v1.SketchService.Health:output_type -> psksketch.v1.HealthResponse
+	15, // 21: psksketch.v1.SketchService.Stats:output_type -> psksketch.v1.StatsResponse
+	16, // [16:22] is the sub-list for method output_type
+	10, // [10:16] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_api_psksketch_v1_psksketch_proto_init() }
@@ -1003,7 +1072,7 @@ func file_api_psksketch_v1_psksketch_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_psksketch_v1_psksketch_proto_rawDesc), len(file_api_psksketch_v1_psksketch_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

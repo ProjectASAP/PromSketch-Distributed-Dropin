@@ -254,8 +254,27 @@ func (s *Storage) LookUp(lbls promlabels.Labels, funcName string, mint, maxt int
 	return ps.LookUp(sketchLabels, funcName, mint, maxt)
 }
 
+// SeriesResult pairs a matched series' full labels with its computed samples.
+type SeriesResult struct {
+	Labels  promlabels.Labels
+	Samples promsketch.Vector
+}
+
 // Eval executes a sketch query
 func (s *Storage) Eval(funcName string, lbls promlabels.Labels, otherArgs float64, mint, maxt, curTime int64) (promsketch.Vector, error) {
+	results, err := s.EvalWithLabels(funcName, lbls, otherArgs, mint, maxt, curTime)
+	if err != nil {
+		return nil, err
+	}
+	var vec promsketch.Vector
+	for _, r := range results {
+		vec = append(vec, r.Samples...)
+	}
+	return vec, nil
+}
+
+// EvalWithLabels executes a sketch query and returns per-series results with full labels.
+func (s *Storage) EvalWithLabels(funcName string, lbls promlabels.Labels, otherArgs float64, mint, maxt, curTime int64) ([]SeriesResult, error) {
 	partitionID := s.partitioner.GetPartition(lbls)
 	if partitionID < s.partitionStart || partitionID >= s.partitionEnd {
 		return nil, fmt.Errorf("partition %d not owned by this node [%d, %d)", partitionID, s.partitionStart, s.partitionEnd)
@@ -264,11 +283,24 @@ func (s *Storage) Eval(funcName string, lbls promlabels.Labels, otherArgs float6
 	ps := s.partitions[localIdx]
 
 	sketchLabels := convertLabels(lbls)
-	result, annots := ps.Eval(funcName, sketchLabels, otherArgs, mint, maxt, curTime)
+	seriesResults, annots := ps.EvalWithLabels(funcName, sketchLabels, otherArgs, mint, maxt, curTime)
 	if errs := annots.AsErrors(); len(errs) > 0 {
 		return nil, fmt.Errorf("sketch eval failed for %s: %v", funcName, errs[0])
 	}
-	return result, nil
+
+	results := make([]SeriesResult, 0, len(seriesResults))
+	for _, sr := range seriesResults {
+		// Convert sketch labels back to prometheus labels
+		promLbls := make([]promlabels.Label, 0, len(sr.Labels))
+		for _, l := range sr.Labels {
+			promLbls = append(promLbls, promlabels.Label{Name: l.Name, Value: l.Value})
+		}
+		results = append(results, SeriesResult{
+			Labels:  promlabels.New(promLbls...),
+			Samples: sr.Samples,
+		})
+	}
+	return results, nil
 }
 
 // convertLabels converts Prometheus labels to promsketch labels
