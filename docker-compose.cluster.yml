@@ -136,6 +136,7 @@ services:
     depends_on:
       - pskinsert
       - node-exporter
+      - fake-exporter
     networks:
       - promsketch-cluster
     restart: unless-stopped
@@ -163,6 +164,21 @@ services:
     image: prom/node-exporter:v1.7.0
     ports:
       - "9101:9100"
+    networks:
+      - promsketch-cluster
+    restart: unless-stopped
+
+  fake-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.fake-exporter
+    ports:
+      - "9102:9101"
+    command:
+      - "--port=9101"
+      - "--pattern=sine"
+      - "--num-labels=2"
+      - "--values-per-label=3,5"
     networks:
       - promsketch-cluster
     restart: unless-stopped

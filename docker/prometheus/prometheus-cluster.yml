@@ -23,6 +23,9 @@ scrape_configs:
   - job_name: 'vmalert'
     static_configs:
       - targets: ['vmalert:8880']
+  - job_name: 'fake-exporter'
+    static_configs:
+      - targets: ['fake-exporter:9101']
 
 remote_write:
   - url: http://pskinsert:8480/api/v1/write
