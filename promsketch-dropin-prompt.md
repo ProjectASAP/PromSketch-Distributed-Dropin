@@ -89,6 +89,87 @@ PromSketch-Dropin is a **sketch-augmented metrics proxy** that sits alongside (n
                                                                 └─────────────────────┘
 ```
 
+### Distributed Cluster Architecture
+
+In cluster mode, PromSketch-Dropin splits into three services: **pskinsert** (ingestion gateway), **pskquery** (query gateway), and **psksketch** (sketch storage nodes). An external **Prometheus** scrapes targets and remote-writes to pskinsert. **vmalert** evaluates recording/alerting rules by querying pskquery, which routes each query to either the sketch nodes or the VictoriaMetrics backend. Results are written back to VictoriaMetrics. **Grafana** visualises everything.
+
+```
+              ┌────────────────────┐
+              │  Scrape Targets    │
+              │  (node_exporter,   │
+              │   app exporters)   │
+              └────────┬───────────┘
+                       │ scrape
+                       ▼
+              ┌────────────────────┐     remote_write      ┌──────────────────────────────────────────────┐
+              │    Prometheus      │ ──────────────────────►│            pskinsert :8480                   │
+              │    :9090           │                        │  (ingestion gateway)                         │
+              │                    │  also scrapes self-    │                                              │
+              │  scrape_configs:   │  metrics from all      │  • receives /api/v1/write                    │
+              │  - node-exporter   │  PromSketch components │  • consistent-hash routes → psksketch nodes  │
+              │  - pskinsert       │                        │  • forwards ALL samples → VictoriaMetrics    │
+              │  - pskquery        │                        └───────┬──────────────┬───────────────────────┘
+              │  - psksketch-{1-3} │                          gRPC  │              │  remote_write (forward)
+              │  - victoriametrics │                                │              │
+              │  - vmalert         │                    ┌───────────┼──────────┐   │
+              └────────────────────┘                    │           │          │   │
+                                                       ▼           ▼          ▼   │
+                                                ┌───────────┬───────────┬───────────┐
+                                                │psksketch-1│psksketch-2│psksketch-3│
+                                                │ :8481 gRPC│ :8481 gRPC│ :8481 gRPC│
+                                                │ :8482 HTTP│ :8482 HTTP│ :8482 HTTP│
+                                                │ part 0-5  │ part 6-10 │ part 11-15│
+                                                │           │           │           │
+                                                │ EH sketch │ EH sketch │ EH sketch │
+                                                │ instances │ instances │ instances │
+                                                └─────┬─────┴─────┬─────┴─────┬─────┘
+                                                      │     gRPC  │           │
+                                              ┌───────┴───────────┴───────────┘
+                                              │  fan-out query
+                                              ▼
+              ┌────────────────────┐    ┌──────────────────────────────────────────────┐
+              │     vmalert        │    │            pskquery :8480 (→ 9100)           │
+              │     :8880          │───►│  (query gateway)                             │
+              │                    │    │                                              │
+              │  -datasource.url=  │    │  • parse MetricsQL query                    │
+              │   http://pskquery  │    │  • capability check:                        │
+              │                    │    │      sketch-capable? → fan-out to psksketch  │
+              │  -remoteWrite.url= │    │      otherwise → proxy to VictoriaMetrics   │
+              │   http://victoria  │    │  • merge results from sketch nodes           │
+              │                    │    │  • proxy /api/v1/labels, /series → backend   │
+              │  rules:            │    └──────────────────────┬───────────────────────┘
+              │   sketch:*_p95:5m  │                           │ fallback query
+              │   sketch:*_avg:5m  │                           │
+              │   backend:*_rate   │                           ▼
+              └───────┬────────────┘    ┌──────────────────────────────────────────────┐
+                      │ remoteWrite     │         VictoriaMetrics :8428                │
+                      │ recording-rule  │  (backend storage)                           │
+                      │ results         │                                              │
+                      └────────────────►│  • stores ALL raw samples (from pskinsert)   │
+                                        │  • stores recording-rule results (from vmalert)│
+                                        │  • answers fallback queries (from pskquery)  │
+                                        └──────────────────────────────────────────────┘
+                                                       ▲
+                                                       │ query datasources
+                                                       │
+              ┌────────────────────────────────────────────────────────────────────────┐
+              │                         Grafana :3000                                  │
+              │                                                                        │
+              │  Datasources:                                                          │
+              │    • PromSketch-Dropin → http://pskquery:8480  (default)               │
+              │    • VictoriaMetrics   → http://victoriametrics:8428                    │
+              │    • Prometheus        → http://prometheus:9090                         │
+              │                                                                        │
+              │  Dashboards:                                                           │
+              │    1. Self-Monitoring    – ingestion rate, memory, forwarder queue,     │
+              │                           sketch hit/miss ratio, storage stats         │
+              │    2. vmalert Demo       – query latency quantiles (sketch vs VM),     │
+              │                           recording-rule results as time series        │
+              │    3. E2E Comparison     – side-by-side sketch vs exact for a          │
+              │                           specific metric (e.g. node_cpu p95)          │
+              └────────────────────────────────────────────────────────────────────────┘
+```
+
 **Two ingestion modes (both supported, can run simultaneously):**
 - **Remote Write Receiver:** Accepts Prometheus remote write at `/api/v1/write` — Prometheus or VictoriaMetrics scrapes targets and forwards to PromSketch-Dropin.
 - **Built-in Scrape Manager:** Reads a Prometheus-style `scrape_configs` YAML and scrapes targets directly, no external Prometheus needed.
@@ -351,6 +432,130 @@ pskctl check sketch-targets /path/to/promsketch.yaml
 ```
 - Validates YAML syntax, required fields, endpoint reachability
 - Checks sketch_targets matchers for valid PromQL/MetricsQL syntax
+
+### 8. End-to-End Cluster Deployment (docker-compose.cluster.yml)
+
+The cluster deployment must provide a fully working end-to-end demo with the following components and data flows:
+
+#### Components
+
+| Service | Image / Build | Port(s) | Role |
+|---|---|---|---|
+| **node-exporter** | `prom/node-exporter` | 9101→9100 | Prometheus exporter producing real host metrics |
+| **Prometheus** | `prom/prometheus` | 9090 | Scrapes all targets; remote-writes ALL samples to pskinsert |
+| **pskinsert** | Dockerfile.pskinsert | 8480 | Ingestion gateway: receives remote write, routes to psksketch nodes via gRPC, forwards all raw samples to VictoriaMetrics |
+| **psksketch-{1,2,3}** | Dockerfile.psksketch | 8481(gRPC), 8482(HTTP) | Sketch storage nodes partitioned by consistent hash |
+| **pskquery** | Dockerfile.pskquery | 9100→8480 | Query gateway: parses MetricsQL, routes sketch-capable queries to psksketch nodes, proxies the rest to VictoriaMetrics |
+| **VictoriaMetrics** | `victoriametrics/victoria-metrics` | 8428 | Backend storage: receives forwarded raw samples from pskinsert and recording-rule results from vmalert |
+| **vmalert** | `victoriametrics/vmalert` | 8880 | Evaluates recording/alerting rules by querying pskquery; writes results back to VictoriaMetrics |
+| **Grafana** | `grafana/grafana` | 3000 | Visualises all dashboards |
+
+#### Data Flow Requirements
+
+1. **Ingestion path:** node-exporter → (scrape) → Prometheus → (remote_write) → pskinsert → (gRPC) → psksketch nodes + (remote_write forward) → VictoriaMetrics
+2. **Recording-rule evaluation:** vmalert → (HTTP query) → pskquery → (query router decision: sketch or backend) → result → vmalert → (remoteWrite) → VictoriaMetrics
+3. **Grafana query path:** Grafana → (HTTP query) → pskquery (or VictoriaMetrics directly for comparison)
+
+#### Prometheus Scrape Configuration
+
+Prometheus must scrape self-metrics from **every** component so that Grafana can display PromSketch-Dropin's own statistics:
+- `node-exporter:9100` — host metrics (the "application data")
+- `pskinsert:8480/metrics` — ingestion gateway self-metrics
+- `pskquery:8480/metrics` — query gateway self-metrics
+- `psksketch-{1,2,3}:8482/metrics` — sketch node self-metrics
+- `victoriametrics:8428/metrics` — backend self-metrics
+- `vmalert:8880/metrics` — alerting self-metrics
+
+All scraped metrics are remote-written to pskinsert so that the self-metrics themselves are also available via the PromSketch query path.
+
+#### vmalert Recording Rules
+
+vmalert must define recording rules that exercise **both** sketch-capable and backend-fallback queries. These rules serve as the "query workload" that continuously evaluates through the PromSketch-Dropin cluster:
+
+```yaml
+groups:
+  - name: sketch-eligible
+    interval: 15s
+    rules:
+      # These queries should be routed to psksketch nodes
+      - record: sketch:node_cpu_p95:5m
+        expr: quantile_over_time(0.95, node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: sketch:node_cpu_avg:5m
+        expr: avg_over_time(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: sketch:node_cpu_p50:5m
+        expr: quantile_over_time(0.5, node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+
+  - name: backend-only
+    interval: 15s
+    rules:
+      # These queries should fall back to VictoriaMetrics
+      - record: backend:node_cpu_rate:5m
+        expr: rate(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+      - record: backend:node_cpu_increase:5m
+        expr: increase(node_cpu_seconds_total{mode="idle", cpu="0"}[5m])
+```
+
+vmalert is configured with:
+- `-datasource.url=http://pskquery:8480` — queries go through PromSketch-Dropin's query router
+- `-remoteWrite.url=http://victoriametrics:8428` — recording-rule results are stored in VictoriaMetrics
+- `-evaluationInterval=15s`
+
+#### Grafana Dashboard Requirements
+
+Three pre-provisioned dashboards, all auto-loaded via provisioning:
+
+**Dashboard 1: PromSketch-Dropin Self-Monitoring** (`promsketch-selfmon.json`)
+- Build info table (version, commit, component)
+- Ingestion rate: `rate(promsketch_ingestion_samples_total[5m])`
+- Sketch insertion rate: `rate(promsketch_ingestion_sketch_samples_total[5m])`
+- Backend forwarding rate: `rate(promsketch_forwarder_samples_forwarded_total[5m])`
+- Forwarder queue length: `promsketch_forwarder_queue_length`
+- Storage: active series, sketched series, memory usage
+- Query routing: sketch hit/miss ratio (`promsketch_query_sketch_hits_total` vs `misses`)
+- Error rates: ingestion errors, query errors, forwarder failures
+
+**Dashboard 2: vmalert Recording Rules Demo** (`promsketch-vmalert.json`)
+- **Query latency quantiles:** p50/p90/p99 of `promsketch_query_duration_seconds` (sketch queries), compared against `promsketch_merger_backend_duration_seconds` (backend queries)
+- **Recording-rule result time series:** Plot the actual recording-rule outputs stored in VictoriaMetrics: `sketch:node_cpu_p95:5m`, `sketch:node_cpu_avg:5m`, `backend:node_cpu_rate:5m`, etc. — these prove the end-to-end pipeline works
+- **Inserted samples comparison:** `rate(promsketch_ingestion_samples_total[5m])` side-by-side with `rate(vm_rows_inserted_total[5m])` from VictoriaMetrics, showing samples flowing through both systems
+
+**Dashboard 3: E2E Quantile Comparison** (`promsketch-e2e.json`)
+- Side-by-side time series of the same query evaluated via PromSketch vs VictoriaMetrics:
+  - Panel A (PromSketch): `quantile_over_time(0.95, node_cpu_seconds_total{mode="idle", cpu="0"}[5m])` via pskquery datasource
+  - Panel B (VictoriaMetrics): same query via VictoriaMetrics datasource
+- Relative error panel: `abs(sketch - exact) / exact`
+
+#### Grafana Datasource Provisioning
+
+Three datasources:
+- **PromSketch-Dropin** (default): `type: prometheus`, `url: http://pskquery:8480` — queries go through the sketch query router
+- **VictoriaMetrics**: `type: prometheus`, `url: http://victoriametrics:8428` — direct backend access for comparison
+- **Prometheus**: `type: prometheus`, `url: http://prometheus:9090` — access to raw scraped self-metrics
+
+#### How to Run
+
+```bash
+# Build all images and start the cluster
+docker-compose -f docker-compose.cluster.yml up --build -d
+
+# Watch logs
+docker-compose -f docker-compose.cluster.yml logs -f
+
+# Open Grafana
+# http://localhost:3000 (admin/admin)
+
+# Verify data flow:
+# 1. Check pskinsert is receiving samples:
+#    curl -s http://localhost:8480/metrics | grep promsketch_ingestion_samples_total
+# 2. Check sketch nodes have data:
+#    curl -s http://localhost:8491/metrics | grep promsketch_storage_sketched_series
+# 3. Check vmalert is evaluating rules:
+#    curl -s http://localhost:8880/api/v1/rules
+# 4. Query through pskquery:
+#    curl 'http://localhost:9100/api/v1/query?query=quantile_over_time(0.95,node_cpu_seconds_total{mode="idle",cpu="0"}[5m])'
+# 5. Check recording-rule results in VictoriaMetrics:
+#    curl 'http://localhost:8428/api/v1/query?query=sketch:node_cpu_p95:5m'
+```
 
 ## Key Design Principles
 
