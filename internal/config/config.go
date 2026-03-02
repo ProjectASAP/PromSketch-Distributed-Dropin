@@ -47,24 +47,24 @@ type RemoteWriteConfig struct {
 
 // ScrapeConfig configures the built-in scrape manager
 type ScrapeConfig struct {
-	Enabled       bool   `yaml:"enabled"`
-	ConfigFile    string `yaml:"config_file"`
+	Enabled        bool          `yaml:"enabled"`
+	ConfigFile     string        `yaml:"config_file"`
 	ScrapeInterval time.Duration `yaml:"scrape_interval"`
 	ScrapeTimeout  time.Duration `yaml:"scrape_timeout"`
 }
 
 // BackendConfig configures the backend storage system
 type BackendConfig struct {
-	Type              string        `yaml:"type"` // victoriametrics, prometheus, influxdb, clickhouse
-	URL               string        `yaml:"url"`
-	RemoteWriteURL    string        `yaml:"remote_write_url"`
-	Timeout           time.Duration `yaml:"timeout"`
-	MaxRetries        int           `yaml:"max_retries"`
-	BatchSize         int           `yaml:"batch_size"`
-	FlushInterval     time.Duration `yaml:"flush_interval"`
-	BasicAuth         *BasicAuth    `yaml:"basic_auth,omitempty"`
-	BearerToken       string        `yaml:"bearer_token,omitempty"`
-	BearerTokenFile   string        `yaml:"bearer_token_file,omitempty"`
+	Type            string        `yaml:"type"` // victoriametrics, prometheus, influxdb, clickhouse
+	URL             string        `yaml:"url"`
+	RemoteWriteURL  string        `yaml:"remote_write_url"`
+	Timeout         time.Duration `yaml:"timeout"`
+	MaxRetries      int           `yaml:"max_retries"`
+	BatchSize       int           `yaml:"batch_size"`
+	FlushInterval   time.Duration `yaml:"flush_interval"`
+	BasicAuth       *BasicAuth    `yaml:"basic_auth,omitempty"`
+	BearerToken     string        `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string        `yaml:"bearer_token_file,omitempty"`
 }
 
 // BasicAuth contains HTTP basic authentication credentials
@@ -75,10 +75,10 @@ type BasicAuth struct {
 
 // SketchConfig configures PromSketch instances
 type SketchConfig struct {
-	NumPartitions  int            `yaml:"num_partitions"`
-	Targets        []SketchTarget `yaml:"targets"`
-	Defaults       SketchDefaults `yaml:"defaults"`
-	MemoryLimit    string         `yaml:"memory_limit"`
+	NumPartitions int            `yaml:"num_partitions"`
+	Targets       []SketchTarget `yaml:"targets"`
+	Defaults      SketchDefaults `yaml:"defaults"`
+	MemoryLimit   string         `yaml:"memory_limit"`
 	// PartitionStart/End define the owned range for cluster mode.
 	// When both are 0, all partitions are allocated (monolithic mode).
 	PartitionStart int `yaml:"partition_start"` // inclusive
@@ -87,8 +87,8 @@ type SketchConfig struct {
 
 // SketchTarget defines which time series should have sketch instances
 type SketchTarget struct {
-	Match    string          `yaml:"match"` // PromQL/MetricsQL matcher
-	EHParams *EHParams       `yaml:"eh_params,omitempty"`
+	Match    string    `yaml:"match"` // PromQL/MetricsQL matcher
+	EHParams *EHParams `yaml:"eh_params,omitempty"`
 }
 
 // SketchDefaults contains default parameters for all sketch targets
@@ -105,11 +105,18 @@ type EHParams struct {
 
 // QueryConfig configures the query API
 type QueryConfig struct {
-	ListenAddress    string        `yaml:"listen_address"`
-	Timeout          time.Duration `yaml:"timeout"`
-	MaxConcurrency   int           `yaml:"max_concurrency"`
-	EnableFallback   bool          `yaml:"enable_fallback"`
-	FallbackTimeout  time.Duration `yaml:"fallback_timeout"`
+	ListenAddress   string              `yaml:"listen_address"`
+	Timeout         time.Duration       `yaml:"timeout"`
+	MaxConcurrency  int                 `yaml:"max_concurrency"`
+	EnableFallback  bool                `yaml:"enable_fallback"`
+	FallbackTimeout time.Duration       `yaml:"fallback_timeout"`
+	Approximation   ApproximationConfig `yaml:"approximation"`
+}
+
+// ApproximationConfig configures approximation metadata returned in query responses.
+type ApproximationConfig struct {
+	Epsilon    float64 `yaml:"epsilon"`
+	Confidence float64 `yaml:"confidence"`
 }
 
 // LoadConfig loads configuration from a YAML file
@@ -205,6 +212,12 @@ func (c *Config) applyDefaults() error {
 	if c.Query.FallbackTimeout == 0 {
 		c.Query.FallbackTimeout = 60 * time.Second
 	}
+	if c.Query.Approximation.Epsilon == 0 {
+		c.Query.Approximation.Epsilon = 0.02
+	}
+	if c.Query.Approximation.Confidence == 0 {
+		c.Query.Approximation.Confidence = 0.95
+	}
 
 	return nil
 }
@@ -238,6 +251,12 @@ func (c *Config) Validate() error {
 	}
 	if !validLogLevels[c.Server.LogLevel] {
 		return fmt.Errorf("invalid log level: %s", c.Server.LogLevel)
+	}
+	if c.Query.Approximation.Epsilon <= 0 || c.Query.Approximation.Epsilon > 1 {
+		return fmt.Errorf("query.approximation.epsilon must be in range (0, 1], got %v", c.Query.Approximation.Epsilon)
+	}
+	if c.Query.Approximation.Confidence <= 0 || c.Query.Approximation.Confidence > 1 {
+		return fmt.Errorf("query.approximation.confidence must be in range (0, 1], got %v", c.Query.Approximation.Confidence)
 	}
 
 	return nil

@@ -120,7 +120,7 @@ func main() {
 
 	// 6. Initialize query API
 	log.Printf("Initializing query API...")
-	queryAPI := api.NewQueryAPI(queryRouter)
+	queryAPI := api.NewQueryAPIWithApproximation(queryRouter, cfg.Query.Approximation)
 
 	// 7. Initialize metadata API
 	log.Printf("Initializing metadata API...")

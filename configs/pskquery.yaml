@@ -30,3 +30,6 @@ pskquery:
     fallback_timeout: 60s
     query_timeout: 30s
     max_concurrent_queries: 100
+    approximation:
+      epsilon: 0.02
+      confidence: 0.95

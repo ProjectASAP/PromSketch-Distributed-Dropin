@@ -40,3 +40,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+/VictoriaMetrics
+/prometheus
+/testdata
+.gocache/
