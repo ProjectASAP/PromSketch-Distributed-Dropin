@@ -84,3 +84,6 @@ query:
   max_concurrency: 20
   enable_fallback: true
   fallback_timeout: 60s
+  approximation:
+    epsilon: 0.02
+    confidence: 0.95

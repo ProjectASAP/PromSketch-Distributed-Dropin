@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/promsketch/promsketch-dropin/internal/backendfactory"
+	mainconfig "github.com/promsketch/promsketch-dropin/internal/config"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	pskconfig "github.com/promsketch/promsketch-dropin/internal/pskquery/config"
@@ -120,7 +121,7 @@ func main() {
 			return
 		}
 
-		sendQueryResult(w, result)
+		sendQueryResult(w, result, cfg.Query.Approximation)
 	})
 
 	// Range query endpoint
@@ -164,7 +165,7 @@ func main() {
 			return
 		}
 
-		sendQueryResult(w, result)
+		sendQueryResult(w, result, cfg.Query.Approximation)
 	})
 
 	// Health endpoint
@@ -221,6 +222,7 @@ type prometheusResponse struct {
 	Data      interface{} `json:"data,omitempty"`
 	ErrorType string      `json:"errorType,omitempty"`
 	Error     string      `json:"error,omitempty"`
+	Warnings  []string    `json:"warnings,omitempty"`
 }
 
 func sendError(w http.ResponseWriter, statusCode int, errorType, errorMsg string) {
@@ -233,7 +235,7 @@ func sendError(w http.ResponseWriter, statusCode int, errorType, errorMsg string
 	})
 }
 
-func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
+func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult, approxCfg mainconfig.ApproximationConfig) {
 	var data interface{}
 
 	if result.Source == "sketch" {
@@ -269,9 +271,37 @@ func sendQueryResult(w http.ResponseWriter, result *merger.QueryResult) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(prometheusResponse{
-		Status: "success",
-		Data:   data,
+		Status:   "success",
+		Data:     data,
+		Warnings: buildWarnings(result, approxCfg),
 	})
+}
+
+func buildWarnings(result *merger.QueryResult, approxCfg mainconfig.ApproximationConfig) []string {
+	warnings := make([]string, 0, 2)
+
+	if result.Source == "sketch" {
+		payload := map[string]interface{}{
+			"approximation": map[string]interface{}{
+				"epsilon":    approxCfg.Epsilon,
+				"confidence": approxCfg.Confidence,
+				"source":     "sketch",
+			},
+		}
+		raw, err := json.Marshal(payload)
+		if err == nil {
+			warnings = append(warnings, string(raw))
+		}
+	}
+
+	if result.Source == "backend" && result.SketchAttempted && result.SketchMiss {
+		warnings = append(warnings, "query served by backend after sketch miss (insufficient sketch coverage for requested series/window)")
+	}
+
+	if len(warnings) == 0 {
+		return nil
+	}
+	return warnings
 }
 
 func parseTimestamp(s string) (time.Time, error) {

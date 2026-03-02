@@ -77,7 +77,7 @@ var (
 )
 
 func readGoogleClusterData2009() {
-	filename := []string{"./testdata/google-cluster-data-1.csv"} // 3535030 rows
+	filename := []string{"../../testdata/google-cluster-data-1.csv"} // 3535030 rows
 	lines := int64(0)
 	vec := make(Vector, 0)
 	for i := 0; i < len(filename); i++ {

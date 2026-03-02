@@ -36,9 +36,11 @@ type MergerMetrics struct {
 
 // QueryResult represents the result of a query
 type QueryResult struct {
-	Source          string      // "sketch" or "backend"
+	Source          string // "sketch" or "backend"
 	Data            interface{}
 	QueryInfo       *parser.QueryInfo
+	SketchAttempted bool
+	SketchMiss      bool
 	ExecutionTimeMs float64
 }
 
@@ -136,6 +138,8 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 			Source:          "backend",
 			Data:            result,
 			QueryInfo:       queryInfo,
+			SketchAttempted: false,
+			SketchMiss:      false,
 			ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 		}, nil
 	}
@@ -231,6 +235,8 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 			Source:          "sketch",
 			Data:            allSeriesResults,
 			QueryInfo:       queryInfo,
+			SketchAttempted: true,
+			SketchMiss:      false,
 			ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 		}, nil
 	}
@@ -256,6 +262,8 @@ func (m *Merger) Query(ctx context.Context, query string, ts time.Time) (*QueryR
 		Source:          "backend",
 		Data:            result,
 		QueryInfo:       queryInfo,
+		SketchAttempted: true,
+		SketchMiss:      true,
 		ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 	}, nil
 }
@@ -298,6 +306,8 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 			Source:          "backend",
 			Data:            result,
 			QueryInfo:       queryInfo,
+			SketchAttempted: false,
+			SketchMiss:      false,
 			ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 		}, nil
 	}
@@ -378,6 +388,8 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 			Source:          "sketch",
 			Data:            allResults,
 			QueryInfo:       queryInfo,
+			SketchAttempted: true,
+			SketchMiss:      false,
 			ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 		}, nil
 	}
@@ -398,6 +410,8 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 		Source:          "backend",
 		Data:            result,
 		QueryInfo:       queryInfo,
+		SketchAttempted: true,
+		SketchMiss:      true,
 		ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 	}, nil
 }
@@ -405,11 +419,11 @@ func (m *Merger) QueryRange(ctx context.Context, query string, start, end time.T
 // Metrics returns the current merger metrics
 func (m *Merger) Metrics() MergerMetrics {
 	return MergerMetrics{
-		SketchQueries:         atomic.LoadUint64(&m.metrics.SketchQueries),
-		BackendQueries:        atomic.LoadUint64(&m.metrics.BackendQueries),
-		SketchHits:            atomic.LoadUint64(&m.metrics.SketchHits),
-		SketchMisses:          atomic.LoadUint64(&m.metrics.SketchMisses),
-		MergeErrors:           atomic.LoadUint64(&m.metrics.MergeErrors),
+		SketchQueries:          atomic.LoadUint64(&m.metrics.SketchQueries),
+		BackendQueries:         atomic.LoadUint64(&m.metrics.BackendQueries),
+		SketchHits:             atomic.LoadUint64(&m.metrics.SketchHits),
+		SketchMisses:           atomic.LoadUint64(&m.metrics.SketchMisses),
+		MergeErrors:            atomic.LoadUint64(&m.metrics.MergeErrors),
 		InstantQueryDurationUs: atomic.LoadUint64(&m.metrics.InstantQueryDurationUs),
 		InstantQueryCount:      atomic.LoadUint64(&m.metrics.InstantQueryCount),
 		RangeQueryDurationUs:   atomic.LoadUint64(&m.metrics.RangeQueryDurationUs),
