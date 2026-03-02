@@ -4,28 +4,28 @@ global:
 scrape_configs:
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['localhost:9101']
   - job_name: 'psksketch'
     static_configs:
       - targets:
-        - 'psksketch-1:8482'
-        - 'psksketch-2:8482'
-        - 'psksketch-3:8482'
+        - 'localhost:8491'
+        - 'localhost:8493'
+        - 'localhost:8495'
   - job_name: 'pskinsert'
     static_configs:
-      - targets: ['pskinsert:8480']
+      - targets: ['localhost:8480']
   - job_name: 'pskquery'
     static_configs:
-      - targets: ['pskquery:8480']
+      - targets: ['localhost:9100']
   - job_name: 'victoriametrics'
     static_configs:
-      - targets: ['victoriametrics:8428']
+      - targets: ['localhost:8428']
   - job_name: 'vmalert'
     static_configs:
-      - targets: ['vmalert:8880']
+      - targets: ['localhost:8880']
   - job_name: 'fake-exporter'
     static_configs:
-      - targets: ['fake-exporter:9101']
+      - targets: ['localhost:9102']
 
 remote_write:
-  - url: http://pskinsert:8480/api/v1/write
+  - url: http://localhost:8480/api/v1/write

@@ -228,15 +228,14 @@ func TestMetricsEndpoint(t *testing.T) {
 	content := string(body)
 
 	expectedMetrics := []string{
-		"storage_total_series",
-		"storage_sketched_series",
-		"storage_samples_inserted",
-		"forwarder_samples_forwarded",
-		"pipeline_samples_received",
-		"router_sketch_queries",
-		"router_backend_queries",
-		"api_query_requests",
-		"metadata_series_requests",
+		"promsketch_storage_series_total",
+		"promsketch_storage_sketched_series",
+		"promsketch_storage_samples_inserted_total",
+		"promsketch_forwarder_samples_forwarded_total",
+		"promsketch_ingestion_samples_total",
+		"promsketch_query_requests_total",
+		"promsketch_query_source_total",
+		"promsketch_metadata_requests_total",
 	}
 
 	for _, metric := range expectedMetrics {
@@ -667,31 +666,31 @@ func TestMetricsCountersAfterOperations(t *testing.T) {
 	content := string(body)
 
 	// Check that samples have been received
-	if val := extractMetricValue(content, "pipeline_samples_received"); val == 0 {
-		t.Error("Expected pipeline_samples_received > 0")
+	if val := extractMetricValue(content, "promsketch_ingestion_samples_total"); val == 0 {
+		t.Error("Expected promsketch_ingestion_samples_total > 0")
 	} else {
-		t.Logf("  pipeline_samples_received = %d", val)
+		t.Logf("  promsketch_ingestion_samples_total = %d", val)
 	}
 
 	// Check that sketched series exist
-	if val := extractMetricValue(content, "storage_sketched_series"); val == 0 {
-		t.Error("Expected storage_sketched_series > 0")
+	if val := extractMetricValue(content, "promsketch_storage_sketched_series"); val == 0 {
+		t.Error("Expected promsketch_storage_sketched_series > 0")
 	} else {
-		t.Logf("  storage_sketched_series = %d", val)
+		t.Logf("  promsketch_storage_sketched_series = %d", val)
 	}
 
 	// Check sketch samples were inserted
-	if val := extractMetricValue(content, "storage_samples_inserted"); val == 0 {
-		t.Error("Expected storage_samples_inserted > 0")
+	if val := extractMetricValue(content, "promsketch_storage_samples_inserted_total"); val == 0 {
+		t.Error("Expected promsketch_storage_samples_inserted_total > 0")
 	} else {
-		t.Logf("  storage_samples_inserted = %d", val)
+		t.Logf("  promsketch_storage_samples_inserted_total = %d", val)
 	}
 
 	// Check that query requests were recorded
-	if val := extractMetricValue(content, "api_query_requests"); val == 0 {
-		t.Error("Expected api_query_requests > 0")
+	if val := extractMetricValue(content, "promsketch_query_requests_total"); val == 0 {
+		t.Error("Expected promsketch_query_requests_total > 0")
 	} else {
-		t.Logf("  api_query_requests = %d", val)
+		t.Logf("  promsketch_query_requests_total = %d", val)
 	}
 
 	t.Log("PASS: Metrics counters show expected activity")
@@ -804,10 +803,10 @@ func TestVerifySketchStorage(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	content := string(body)
 
-	sketchedSeries := extractMetricValue(content, "storage_sketched_series")
-	samplesInserted := extractMetricValue(content, "storage_samples_inserted")
-	sketchHits := extractMetricValue(content, "router_sketch_hits")
-	sketchQueries := extractMetricValue(content, "router_sketch_queries")
+	sketchedSeries := extractMetricValue(content, "promsketch_storage_sketched_series")
+	samplesInserted := extractMetricValue(content, "promsketch_storage_samples_inserted_total")
+	sketchHits := extractMetricValue(content, "promsketch_query_sketch_hits_total")
+	sketchQueries := extractMetricValue(content, "promsketch_query_requests_total")
 
 	t.Logf("  Sketched series:    %d", sketchedSeries)
 	t.Logf("  Samples inserted:   %d", samplesInserted)
@@ -952,8 +951,10 @@ func extractMetricValue(content, name string) int64 {
 		if strings.HasPrefix(line, name+" ") {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
-				val, _ := strconv.ParseInt(parts[1], 10, 64)
-				return val
+				val, err := strconv.ParseFloat(parts[1], 64)
+				if err == nil {
+					return int64(val)
+				}
 			}
 		}
 	}

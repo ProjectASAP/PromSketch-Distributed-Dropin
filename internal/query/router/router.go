@@ -228,14 +228,7 @@ func (r *QueryRouter) executeWithSketchesRange(queryInfo *parser.QueryInfo, star
 	// Build labels from query
 	lbls := r.buildLabelsFromQuery(queryInfo)
 
-	mint := start.UnixMilli()
-	maxt := end.UnixMilli()
 	curTime := time.Now().UnixMilli()
-
-	// Check if sketch can answer this query
-	if !r.storage.LookUp(lbls, queryInfo.FunctionName, mint, maxt) {
-		return nil, fmt.Errorf("sketch data not available for time range")
-	}
 
 	// For range queries, we need to evaluate at each step
 	results := make([]interface{}, 0)
@@ -251,6 +244,12 @@ func (r *QueryRouter) executeWithSketchesRange(queryInfo *parser.QueryInfo, star
 		evalMinTime := evalMaxTime - queryInfo.Range
 		if evalMinTime >= evalMaxTime {
 			evalMinTime = evalMaxTime
+		}
+
+		// Coverage should be checked against the actual rollup window for each step,
+		// not the full query [start,end] range.
+		if !r.storage.LookUp(lbls, queryInfo.FunctionName, evalMinTime, evalMaxTime) {
+			continue
 		}
 
 		result, err := r.storage.Eval(queryInfo.FunctionName, lbls, otherArgs, evalMinTime, evalMaxTime, curTime)
