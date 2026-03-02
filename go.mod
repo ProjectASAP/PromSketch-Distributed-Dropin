@@ -13,15 +13,15 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/praserx/ipconv v1.2.2
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/prometheus v0.54.1
+	github.com/prometheus/prometheus v0.55.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/zzylol/VictoriaMetrics v0.0.2-alpha
+	github.com/zzylol/VictoriaMetrics v0.0.2-0.20250916142704-21bdf28b3f19
 	github.com/zzylol/go-kll v0.0.1
 	github.com/zzylol/metricsql v0.1.1
-	github.com/zzylol/prometheus-sketches v0.0.0-20250916150221-b305d4d8500a
+	github.com/zzylol/prometheus-sketches v0.0.0-20240930201432-bcde765c4f02
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1

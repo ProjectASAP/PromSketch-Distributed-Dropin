@@ -12,10 +12,10 @@ import (
 
 // Config represents the pskquery configuration
 type Config struct {
-	Server  ServerConfig          `yaml:"server"`
-	Cluster cluster.ClusterConfig `yaml:"cluster"`
+	Server  ServerConfig             `yaml:"server"`
+	Cluster cluster.ClusterConfig    `yaml:"cluster"`
 	Backend mainconfig.BackendConfig `yaml:"backend"`
-	Query   QueryConfig           `yaml:"query"`
+	Query   QueryConfig              `yaml:"query"`
 }
 
 // ServerConfig configures the HTTP server
@@ -27,10 +27,11 @@ type ServerConfig struct {
 
 // QueryConfig configures query behavior
 type QueryConfig struct {
-	EnableFallback      bool          `yaml:"enable_fallback"`
-	FallbackTimeout     time.Duration `yaml:"fallback_timeout"`
-	QueryTimeout        time.Duration `yaml:"query_timeout"`
-	MaxConcurrentQueries int          `yaml:"max_concurrent_queries"`
+	EnableFallback       bool                           `yaml:"enable_fallback"`
+	FallbackTimeout      time.Duration                  `yaml:"fallback_timeout"`
+	QueryTimeout         time.Duration                  `yaml:"query_timeout"`
+	MaxConcurrentQueries int                            `yaml:"max_concurrent_queries"`
+	Approximation        mainconfig.ApproximationConfig `yaml:"approximation"`
 }
 
 // LoadConfig loads pskquery configuration from a YAML file
@@ -49,6 +50,9 @@ func LoadConfig(path string) (*Config, error) {
 
 	cfg := &wrapper.PskQuery
 	cfg.applyDefaults()
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -74,7 +78,23 @@ func (c *Config) applyDefaults() {
 	if c.Query.MaxConcurrentQueries == 0 {
 		c.Query.MaxConcurrentQueries = 100
 	}
+	if c.Query.Approximation.Epsilon == 0 {
+		c.Query.Approximation.Epsilon = 0.02
+	}
+	if c.Query.Approximation.Confidence == 0 {
+		c.Query.Approximation.Confidence = 0.95
+	}
 	if c.Backend.Timeout == 0 {
 		c.Backend.Timeout = 60 * time.Second
 	}
+}
+
+func (c *Config) validate() error {
+	if c.Query.Approximation.Epsilon <= 0 || c.Query.Approximation.Epsilon > 1 {
+		return fmt.Errorf("pskquery.query.approximation.epsilon must be in range (0, 1], got %v", c.Query.Approximation.Epsilon)
+	}
+	if c.Query.Approximation.Confidence <= 0 || c.Query.Approximation.Confidence > 1 {
+		return fmt.Errorf("pskquery.query.approximation.confidence must be in range (0, 1], got %v", c.Query.Approximation.Confidence)
+	}
+	return nil
 }

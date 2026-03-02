@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/promsketch/promsketch-dropin/internal/config"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/promsketch"
 	"github.com/promsketch/promsketch-dropin/internal/query/parser"
@@ -18,6 +19,7 @@ import (
 type QueryAPI struct {
 	router  *router.QueryRouter
 	metrics *apiMetrics
+	approx  config.ApproximationConfig
 }
 
 // apiMetrics is the internal atomic state for API request counters
@@ -41,7 +43,23 @@ func NewQueryAPI(r *router.QueryRouter) *QueryAPI {
 	return &QueryAPI{
 		router:  r,
 		metrics: &apiMetrics{},
+		approx: config.ApproximationConfig{
+			Epsilon:    0.02,
+			Confidence: 0.95,
+		},
 	}
+}
+
+// NewQueryAPIWithApproximation creates a query API handler with approximation metadata settings.
+func NewQueryAPIWithApproximation(r *router.QueryRouter, approx config.ApproximationConfig) *QueryAPI {
+	api := NewQueryAPI(r)
+	if approx.Epsilon > 0 {
+		api.approx.Epsilon = approx.Epsilon
+	}
+	if approx.Confidence > 0 {
+		api.approx.Confidence = approx.Confidence
+	}
+	return api
 }
 
 // PrometheusResponse represents the Prometheus API response format
@@ -130,7 +148,7 @@ func (api *QueryAPI) handleQuery(w http.ResponseWriter, r *http.Request) {
 	data := api.convertToQueryData(result)
 
 	// Send response
-	api.sendSuccess(w, data)
+	api.sendSuccess(w, data, api.buildWarnings(result))
 }
 
 // handleQueryRange handles range queries
@@ -192,7 +210,7 @@ func (api *QueryAPI) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	data := api.convertToQueryRangeData(result, start, end, step)
 
 	// Send response
-	api.sendSuccess(w, data)
+	api.sendSuccess(w, data, api.buildWarnings(result))
 }
 
 // convertToQueryData converts router result to Prometheus instant query format
@@ -328,15 +346,54 @@ func (api *QueryAPI) convertToQueryRangeData(result *router.QueryResult, start, 
 }
 
 // sendSuccess sends a successful response
-func (api *QueryAPI) sendSuccess(w http.ResponseWriter, data interface{}) {
+func (api *QueryAPI) sendSuccess(w http.ResponseWriter, data interface{}, warnings []string) {
 	response := PrometheusResponse{
-		Status: "success",
-		Data:   data,
+		Status:   "success",
+		Data:     data,
+		Warnings: warnings,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+func (api *QueryAPI) buildWarnings(result *router.QueryResult) []string {
+	warnings := make([]string, 0, 2)
+
+	if result.Source == "sketch" {
+		payload := map[string]interface{}{
+			"approximation": map[string]interface{}{
+				"epsilon":    api.approx.Epsilon,
+				"confidence": api.approx.Confidence,
+				"source":     "sketch",
+			},
+		}
+		raw, err := json.Marshal(payload)
+		if err == nil {
+			warnings = append(warnings, string(raw))
+		}
+	}
+
+	if result.Source == "backend" && result.SketchAttempted && result.SketchMiss {
+		payload := map[string]interface{}{
+			"approximation": map[string]interface{}{
+				"epsilon":    api.approx.Epsilon,
+				"confidence": api.approx.Confidence,
+				"source":     "backend_fallback",
+			},
+		}
+		raw, err := json.Marshal(payload)
+		if err == nil {
+			warnings = append(warnings, string(raw))
+		}
+		warnings = append(warnings, "query served by backend after sketch miss (insufficient sketch coverage for requested series/window)")
+	}
+
+	if len(warnings) == 0 {
+		return nil
+	}
+	return warnings
 }
 
 // sendError sends an error response

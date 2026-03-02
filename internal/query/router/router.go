@@ -55,6 +55,10 @@ type QueryResult struct {
 	// Query information for label reconstruction
 	QueryInfo *parser.QueryInfo
 
+	// Routing metadata for response warnings
+	SketchAttempted bool
+	SketchMiss      bool
+
 	// Execution metrics
 	ExecutionTimeMs float64
 }
@@ -113,6 +117,7 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 				Source:          "sketch",
 				Data:            result,
 				QueryInfo:       queryInfo,
+				SketchAttempted: true,
 				ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 			}, nil
 		}
@@ -136,6 +141,8 @@ func (r *QueryRouter) Query(ctx context.Context, query string, ts time.Time) (*Q
 		Source:          "backend",
 		Data:            backendResult.Result,
 		QueryInfo:       queryInfo,
+		SketchAttempted: capability.CanHandleWithSketches,
+		SketchMiss:      capability.CanHandleWithSketches,
 		ExecutionTimeMs: float64(time.Since(startTime).Milliseconds()),
 	}, nil
 }
@@ -171,6 +178,7 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 				Source:          "sketch",
 				Data:            result,
 				QueryInfo:       queryInfo,
+				SketchAttempted: true,
 				ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 			}, nil
 		}
@@ -194,6 +202,8 @@ func (r *QueryRouter) QueryRange(ctx context.Context, query string, start, end t
 		Source:          "backend",
 		Data:            backendResult.Result,
 		QueryInfo:       queryInfo,
+		SketchAttempted: capability.CanHandleWithSketches,
+		SketchMiss:      capability.CanHandleWithSketches,
 		ExecutionTimeMs: float64(time.Since(startExec).Milliseconds()),
 	}, nil
 }
