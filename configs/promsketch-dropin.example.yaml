@@ -26,8 +26,8 @@ ingestion:
 # Backend storage system (for forwarding raw samples and fallback queries)
 backend:
   type: victoriametrics  # victoriametrics, prometheus, influxdb, clickhouse
-  url: http://victoria-metrics:8428
-  remote_write_url: http://victoria-metrics:8428/api/v1/write
+  url: http://victoriametrics:8428
+  remote_write_url: http://victoriametrics:8428/api/v1/write
   timeout: 30s
   max_retries: 3
   batch_size: 1000
