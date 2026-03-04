@@ -147,6 +147,79 @@ GET /api/v1/label/job/values
 
 ---
 
+## Operational & Accuracy Metadata
+
+### **`/ingest_stats`** - Ingestion throughput metadata
+
+`/ingest_stats` provides rolling ingestion telemetry for runtime monitoring.  
+It is available on:
+- `promsketch-dropin` (monolithic)
+- `pskinsert` (cluster ingest gateway)
+
+**Request:**
+```bash
+GET /ingest_stats
+```
+
+**Response fields:**
+- `total_ingested`: cumulative ingested samples since process start
+- `rate_per_sec`: instantaneous ingest rate for the latest interval
+- `avg_rate_per_sec`: moving average ingest rate (windowed)
+- `samples_in_interval`: samples received in the latest interval
+- `interval_seconds`: measured interval duration (seconds)
+- `timestamp_ms`: snapshot timestamp in Unix milliseconds
+- `timestamp_rfc3339`: snapshot timestamp in RFC3339 (UTC)
+
+**Example response:**
+```json
+{
+  "total_ingested": 24599,
+  "rate_per_sec": 0,
+  "avg_rate_per_sec": 81.38340545747626,
+  "samples_in_interval": 0,
+  "interval_seconds": 0.999929133,
+  "timestamp_ms": 1772630161167,
+  "timestamp_rfc3339": "2026-03-04T13:16:01Z"
+}
+```
+
+Interpretation of the example above:
+- The pipeline has ingested `24599` samples total.
+- No new samples arrived in the most recent ~1 second interval (`rate_per_sec=0`).
+- Recent history still shows non-zero traffic (`avg_rate_per_sec≈81.38`).
+
+### **`/accuracy_metadata`** - Current behavior
+
+There is currently **no standalone `/accuracy_metadata` HTTP endpoint** in PromSketch-Dropin.
+
+Accuracy/approximation metadata is currently exposed in **query responses** (`/api/v1/query`, `/api/v1/query_range`) via the `warnings` field as JSON payload(s), for example:
+
+```json
+{
+  "approximation": {
+    "epsilon": 0.02,
+    "confidence": 0.95,
+    "source": "sketch"
+  }
+}
+```
+
+or on fallback:
+
+```json
+{
+  "approximation": {
+    "epsilon": 0.02,
+    "confidence": 0.95,
+    "source": "backend_fallback"
+  }
+}
+```
+
+This means approximation metadata is attached per-query response rather than queried through a dedicated endpoint.
+
+---
+
 ## Grafana Integration
 
 ### **Features Enabled**
