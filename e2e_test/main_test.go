@@ -105,13 +105,13 @@ sketch:
   memory_limit: "512MB"
   defaults:
     eh_params:
-      window_size: 60
+      window_size: 600
       k: 50
       kll_k: 256
   targets:
     - match: '{__name__=~"e2e_test_.*"}'
       eh_params:
-        window_size: 60
+        window_size: 600
         k: 50
         kll_k: 256
 
@@ -347,14 +347,14 @@ func TestBackendRangeQuery(t *testing.T) {
 
 func TestSketchAvgOverTime(t *testing.T) {
 	// Send 6 minutes of data so [5m] window is fully covered.
-	ingestFreshData(t, "e2e_test_sketch_avg", 360, func(i int) float64 {
+	queryTs := ingestFreshData(t, "e2e_test_sketch_avg", 360, func(i int) float64 {
 		return float64(10 + i)
 	})
 	time.Sleep(2 * time.Second)
 
 	// Query sketch-supported function
 	query := `avg_over_time(e2e_test_sketch_avg{job="e2e"}[5m])`
-	result := queryInstantUntilSketchHit(t, query, 20*time.Second)
+	result := queryInstantUntilSketchHitAt(t, query, queryTs, 20*time.Second)
 	logResponseWarnings(t, result)
 	t.Logf("PASS: avg_over_time query hit sketch (status: %s)", result.Status)
 }
@@ -362,13 +362,13 @@ func TestSketchAvgOverTime(t *testing.T) {
 // ===== Test 8: Sketch-Based Query - sum_over_time =====
 
 func TestSketchSumOverTime(t *testing.T) {
-	ingestFreshData(t, "e2e_test_sketch_sum", 360, func(i int) float64 {
+	queryTs := ingestFreshData(t, "e2e_test_sketch_sum", 360, func(i int) float64 {
 		return float64(i + 1)
 	})
 	time.Sleep(2 * time.Second)
 
 	query := `sum_over_time(e2e_test_sketch_sum{job="e2e"}[5m])`
-	result := queryInstantUntilSketchHit(t, query, 20*time.Second)
+	result := queryInstantUntilSketchHitAt(t, query, queryTs, 20*time.Second)
 	logResponseWarnings(t, result)
 
 	t.Logf("PASS: sum_over_time query hit sketch (status: %s)", result.Status)
@@ -377,13 +377,13 @@ func TestSketchSumOverTime(t *testing.T) {
 // ===== Test 9: Sketch-Based Query - count_over_time =====
 
 func TestSketchCountOverTime(t *testing.T) {
-	ingestFreshData(t, "e2e_test_sketch_count", 360, func(i int) float64 {
+	queryTs := ingestFreshData(t, "e2e_test_sketch_count", 360, func(i int) float64 {
 		return float64(i)
 	})
 	time.Sleep(2 * time.Second)
 
 	query := `count_over_time(e2e_test_sketch_count{job="e2e"}[5m])`
-	result := queryInstantUntilSketchHit(t, query, 20*time.Second)
+	result := queryInstantUntilSketchHitAt(t, query, queryTs, 20*time.Second)
 	logResponseWarnings(t, result)
 
 	t.Logf("PASS: count_over_time query hit sketch (status: %s)", result.Status)
@@ -392,13 +392,13 @@ func TestSketchCountOverTime(t *testing.T) {
 // ===== Test 10: Sketch-Based Query - quantile_over_time =====
 
 func TestSketchQuantileOverTime(t *testing.T) {
-	ingestFreshData(t, "e2e_test_sketch_quantile", 360, func(i int) float64 {
+	queryTs := ingestFreshData(t, "e2e_test_sketch_quantile", 360, func(i int) float64 {
 		return float64(i)
 	})
 	time.Sleep(2 * time.Second)
 
 	query := `quantile_over_time(0.95, e2e_test_sketch_quantile{job="e2e"}[5m])`
-	result := queryInstantUntilSketchHit(t, query, 20*time.Second)
+	result := queryInstantUntilSketchHitAt(t, query, queryTs, 20*time.Second)
 	logResponseWarnings(t, result)
 
 	t.Logf("PASS: quantile_over_time query hit sketch (status: %s)", result.Status)
@@ -407,17 +407,17 @@ func TestSketchQuantileOverTime(t *testing.T) {
 // ===== Test 11: Sketch-Based Range Query =====
 
 func TestSketchRangeQuery(t *testing.T) {
-	ingestFreshData(t, "e2e_test_sketch_avg", 240, func(i int) float64 {
+	queryTs := ingestFreshData(t, "e2e_test_sketch_avg", 420, func(i int) float64 {
 		return float64(100 + i)
 	})
 	time.Sleep(2 * time.Second)
 
-	now := time.Now()
-	start := now.Add(-5 * time.Minute)
+	end := queryTs
+	start := end.Add(-5 * time.Minute)
 
 	query := `avg_over_time(e2e_test_sketch_avg{job="e2e"}[2m])`
 
-	result := queryRangeUntilSketchHit(t, query, start, now, "60s", 20*time.Second)
+	result := queryRangeUntilSketchHit(t, query, start, end, "60s", 20*time.Second)
 	logResponseWarnings(t, result)
 
 	t.Log("PASS: Sketch-based range query hit sketch")
@@ -884,13 +884,17 @@ func queryRange(t *testing.T, query string, start, end time.Time, step string) *
 }
 
 func queryInstantUntilSketchHit(t *testing.T, query string, timeout time.Duration) *promResponse {
+	return queryInstantUntilSketchHitAt(t, query, time.Now(), timeout)
+}
+
+func queryInstantUntilSketchHitAt(t *testing.T, query string, ts time.Time, timeout time.Duration) *promResponse {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	var last *promResponse
 
 	for time.Now().Before(deadline) {
-		last = queryInstant(t, query)
+		last = queryInstantRaw(t, query, fmt.Sprintf("%d", ts.Unix()))
 		if last.Status == "success" && hasSketchApproximationWarning(last) {
 			return last
 		}
@@ -974,7 +978,7 @@ func logResponseWarnings(t *testing.T, result *promResponse) {
 	}
 }
 
-func ingestFreshData(t *testing.T, metricName string, numSamples int, valueFunc func(int) float64) {
+func ingestFreshData(t *testing.T, metricName string, numSamples int, valueFunc func(int) float64) time.Time {
 	t.Helper()
 
 	now := time.Now()
@@ -999,6 +1003,9 @@ func ingestFreshData(t *testing.T, metricName string, numSamples int, valueFunc 
 	if resp.StatusCode != 204 {
 		t.Fatalf("Ingest failed with status %d", resp.StatusCode)
 	}
+
+	// buildTimeSeries generates samples up to baseTime-1s, so use that as query anchor.
+	return now.Add(-1 * time.Second)
 }
 
 func forceFlushVM(t *testing.T) {
