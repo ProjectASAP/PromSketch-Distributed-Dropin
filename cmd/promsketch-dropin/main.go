@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -169,6 +170,22 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "OK\n")
+	})
+
+	// Ingestion stats endpoint
+	mux.HandleFunc("/ingest_stats", func(w http.ResponseWriter, r *http.Request) {
+		stats := pipe.IngestStats()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"total_ingested":      stats.TotalSamples,
+			"rate_per_sec":        stats.RatePerSec,
+			"avg_rate_per_sec":    stats.AvgRatePerSec,
+			"samples_in_interval": stats.SamplesInInterval,
+			"interval_seconds":    stats.IntervalSeconds,
+			"timestamp_ms":        stats.Timestamp.UnixMilli(),
+			"timestamp_rfc3339":   stats.Timestamp.Format(time.RFC3339),
+		})
 	})
 
 	// Metrics endpoint (Prometheus client_golang)

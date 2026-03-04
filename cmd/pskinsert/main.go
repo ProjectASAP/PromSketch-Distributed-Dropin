@@ -29,6 +29,7 @@ import (
 	"github.com/promsketch/promsketch-dropin/internal/cluster/hash"
 	"github.com/promsketch/promsketch-dropin/internal/cluster/health"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/pipeline"
+	ingeststats "github.com/promsketch/promsketch-dropin/internal/ingestion/stats"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/pskinsert/client"
 	pskconfig "github.com/promsketch/promsketch-dropin/internal/pskinsert/config"
@@ -124,6 +125,8 @@ func main() {
 	}
 	forwarder := backend.NewForwarder(backendClient, &cfg.Backend)
 	forwarder.Start()
+	statsTracker := ingeststats.NewTracker(time.Second, 10)
+	statsTracker.Start()
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
@@ -158,6 +161,7 @@ func main() {
 		for i := range req.Timeseries {
 			ts := &req.Timeseries[i]
 			lbls := prompbLabelsToLabels(ts.Labels)
+			statsTracker.AddSamples(uint64(len(ts.Samples)))
 
 			for _, sample := range ts.Samples {
 				if err := insertRouter.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
@@ -186,6 +190,7 @@ func main() {
 		err := otlpstream.ParseStream(r.Body, isGzipped, nil, func(tss []prompbmarshal.TimeSeries) error {
 			for i := range tss {
 				ts := &tss[i]
+				statsTracker.AddSamples(uint64(len(ts.Samples)))
 				lbls := pipeline.VMMarshalLabelsToLabels(ts.Labels)
 				for _, sample := range ts.Samples {
 					if err := insertRouter.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
@@ -215,6 +220,7 @@ func main() {
 			}
 			for i := range wr.Timeseries {
 				ts := &wr.Timeseries[i]
+				statsTracker.AddSamples(uint64(len(ts.Samples)))
 				lbls := pipeline.VMMarshalLabelsToLabels(ts.Labels)
 				for _, sample := range ts.Samples {
 					if err := insertRouter.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
@@ -234,14 +240,30 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":       "healthy",
-			"component":    "pskinsert",
-			"node_health":  healthChecker.GetHealthStatus(),
+			"status":      "healthy",
+			"component":   "pskinsert",
+			"node_health": healthChecker.GetHealthStatus(),
 		})
 	})
 
 	// Metrics endpoint (Prometheus client_golang)
 	mux.Handle("/metrics", promhttp.Handler())
+
+	// Ingestion stats endpoint
+	mux.HandleFunc("/ingest_stats", func(w http.ResponseWriter, r *http.Request) {
+		stats := statsTracker.Snapshot()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"total_ingested":      stats.TotalSamples,
+			"rate_per_sec":        stats.RatePerSec,
+			"avg_rate_per_sec":    stats.AvgRatePerSec,
+			"samples_in_interval": stats.SamplesInInterval,
+			"interval_seconds":    stats.IntervalSeconds,
+			"timestamp_ms":        stats.Timestamp.UnixMilli(),
+			"timestamp_rfc3339":   stats.Timestamp.Format(time.RFC3339),
+		})
+	})
 
 	httpServer := &http.Server{
 		Addr:         cfg.Server.ListenAddress,
@@ -272,6 +294,7 @@ func main() {
 
 	promscrape.Stop()
 	forwarder.Stop()
+	statsTracker.Stop()
 	healthChecker.Stop()
 	pool.Close()
 

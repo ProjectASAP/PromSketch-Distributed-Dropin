@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -17,6 +18,7 @@ import (
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/otlp"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/remotewrite"
 	"github.com/promsketch/promsketch-dropin/internal/ingestion/scrape"
+	ingeststats "github.com/promsketch/promsketch-dropin/internal/ingestion/stats"
 	"github.com/promsketch/promsketch-dropin/internal/metrics"
 	"github.com/promsketch/promsketch-dropin/internal/storage"
 )
@@ -29,6 +31,7 @@ type Pipeline struct {
 	remoteWriteHdlr *remotewrite.Handler
 	otlpHdlr        *otlp.Handler
 	scrapeManager   *scrape.Manager
+	ingestStats     *ingeststats.Tracker
 	metrics         *pipelineMetrics
 	mu              sync.RWMutex
 }
@@ -63,10 +66,11 @@ func NewPipeline(
 	fwd *backend.Forwarder,
 ) (*Pipeline, error) {
 	p := &Pipeline{
-		config:    cfg,
-		storage:   stor,
-		forwarder: fwd,
-		metrics:   &pipelineMetrics{},
+		config:      cfg,
+		storage:     stor,
+		forwarder:   fwd,
+		ingestStats: ingeststats.NewTracker(time.Second, 10),
+		metrics:     &pipelineMetrics{},
 	}
 
 	// Initialize remote write handler if enabled
@@ -140,6 +144,7 @@ func (p *Pipeline) processTimeSeries(ts *prompb.TimeSeries) error {
 	// Insert each sample into PromSketch storage
 	for _, sample := range ts.Samples {
 		p.metrics.totalSamplesReceived.Add(1)
+		p.ingestStats.AddSamples(1)
 		metrics.IngestionSamplesTotal.Inc()
 
 		if err := p.storage.Insert(lbls, sample.Timestamp, sample.Value); err != nil {
@@ -173,6 +178,8 @@ func (p *Pipeline) OTLPHandler() *otlp.Handler {
 
 // Start starts the pipeline
 func (p *Pipeline) Start(ctx context.Context) error {
+	p.ingestStats.Start()
+
 	// Start scrape manager if enabled
 	if p.scrapeManager != nil {
 		if err := p.scrapeManager.Start(ctx); err != nil {
@@ -185,6 +192,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 
 // Stop stops the pipeline
 func (p *Pipeline) Stop() error {
+	p.ingestStats.Stop()
 	if p.scrapeManager != nil {
 		p.scrapeManager.Stop()
 	}
@@ -199,6 +207,11 @@ func (p *Pipeline) Metrics() PipelineMetrics {
 		BackendSamplesForwarded: p.metrics.backendSamplesForwarded.Load(),
 		Errors:                  p.metrics.errors.Load(),
 	}
+}
+
+// IngestStats returns rolling ingestion statistics.
+func (p *Pipeline) IngestStats() ingeststats.Snapshot {
+	return p.ingestStats.Snapshot()
 }
 
 // prompbLabelsToLabels converts prompb labels to Prometheus labels
