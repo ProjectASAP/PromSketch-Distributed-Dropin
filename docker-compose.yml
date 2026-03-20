@@ -51,20 +51,18 @@ services:
     networks:
       - promsketch
 
-  # Node Exporter - Sample metrics producer
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
+  # Fake Exporter - Synthetic Zipf-distributed metrics producer
+  fake-exporter:
+    build:
+      context: ./docker/fake-exporter
+      dockerfile: Dockerfile
+    container_name: fake-exporter
     ports:
-      - "9101:9100"
+      - "8080:8080"
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
+      - "--port=8080"
+      - "--instancestart=0"
+      - "--batchsize=1000"
     networks:
       - promsketch
 
@@ -84,7 +82,7 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     depends_on:
       - promsketch-dropin
-      - node-exporter
+      - fake-exporter
     networks:
       - promsketch
 

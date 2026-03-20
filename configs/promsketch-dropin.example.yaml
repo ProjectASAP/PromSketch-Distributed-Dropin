@@ -57,25 +57,12 @@ sketch:
 
   # Define which time series should have sketch instances created
   targets:
-    # HTTP request duration metrics
-    - match: '{__name__=~"http_request_duration_.*"}'
+    # Fake machine metrics (Zipf distribution, 1000 time series)
+    - match: '{__name__="fake_machine_metric"}'
       eh_params:
-        window_size: 3600  # 1 hour
+        window_size: 1800  # 30 minutes
         k: 50
         kll_k: 256
-
-    # Node exporter CPU metrics
-    - match: '{__name__="node_cpu_seconds_total"}'
-      eh_params:
-        window_size: 7200  # 2 hours
-
-    # API server metrics
-    - match: '{job="apiserver"}'
-      eh_params:
-        window_size: 1800
-
-    # Catch-all for testing (use with caution in production)
-    # - match: '*'
 
 # Query API settings
 query:

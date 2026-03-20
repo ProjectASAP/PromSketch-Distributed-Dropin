@@ -45,13 +45,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "promsketch-dashboard" },
-          "expr": "quantile_over_time(0.95, node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "quantile_over_time(0.95, fake_machine_metric[5m])",
           "legendFormat": "PromSketch p95"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "quantile_over_time(0.95, node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "quantile_over_time(0.95, fake_machine_metric[5m])",
           "legendFormat": "VictoriaMetrics p95"
         }
       ]
@@ -92,13 +92,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "promsketch-dashboard" },
-          "expr": "quantile_over_time(0.5, node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "quantile_over_time(0.5, fake_machine_metric[5m])",
           "legendFormat": "PromSketch p50"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "quantile_over_time(0.5, node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "quantile_over_time(0.5, fake_machine_metric[5m])",
           "legendFormat": "VictoriaMetrics p50"
         }
       ]
@@ -124,8 +124,8 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "count(node_cpu_seconds_total)",
-          "legendFormat": "CPU series in VM",
+          "expr": "count(fake_machine_metric)",
+          "legendFormat": "fake_machine_metric series in VM",
           "instant": true
         }
       ],
@@ -156,8 +156,8 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "promsketch-dashboard" },
-          "expr": "count(node_cpu_seconds_total)",
-          "legendFormat": "CPU series in PromSketch",
+          "expr": "count(fake_machine_metric)",
+          "legendFormat": "fake_machine_metric series in PromSketch",
           "instant": true
         }
       ],
@@ -189,7 +189,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "scrape_samples_scraped{job=\"node-exporter\"}",
+          "expr": "scrape_samples_scraped{job=\"fake-exporter\"}",
           "legendFormat": "samples/scrape",
           "instant": true
         }
@@ -264,37 +264,37 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.50\"}",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(promsketch_query_duration_seconds_bucket[5m])))",
           "legendFormat": "PromSketch p50"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.90\"}",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(promsketch_query_duration_seconds_bucket[5m])))",
           "legendFormat": "PromSketch p90"
         },
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_query_duration_seconds{type=\"range\", quantile=\"0.99\"}",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(promsketch_query_duration_seconds_bucket[5m])))",
           "legendFormat": "PromSketch p99"
         },
         {
           "refId": "D",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_backend_duration_seconds{quantile=\"0.50\"}",
+          "expr": "vm_request_duration_seconds{path=\"/api/v1/query_range\", quantile=\"0.5\"}",
           "legendFormat": "VictoriaMetrics p50"
         },
         {
           "refId": "E",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_backend_duration_seconds{quantile=\"0.90\"}",
+          "expr": "vm_request_duration_seconds{path=\"/api/v1/query_range\", quantile=\"0.9\"}",
           "legendFormat": "VictoriaMetrics p90"
         },
         {
           "refId": "F",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "pskquery_backend_duration_seconds{quantile=\"0.99\"}",
+          "expr": "vm_request_duration_seconds{path=\"/api/v1/query_range\", quantile=\"0.99\"}",
           "legendFormat": "VictoriaMetrics p99"
         }
       ]
@@ -333,13 +333,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "promsketch-dashboard" },
-          "expr": "avg_over_time(node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "avg_over_time(fake_machine_metric[5m])",
           "legendFormat": "PromSketch avg"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "victoriametrics-dashboard" },
-          "expr": "avg_over_time(node_cpu_seconds_total{mode=\"idle\", cpu=\"0\"}[5m])",
+          "expr": "avg_over_time(fake_machine_metric[5m])",
           "legendFormat": "VictoriaMetrics avg"
         }
       ]

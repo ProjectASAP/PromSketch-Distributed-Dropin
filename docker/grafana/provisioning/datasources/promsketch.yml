@@ -5,7 +5,7 @@ datasources:
     type: prometheus
     uid: promsketch-dashboard
     access: proxy
-    url: http://pskquery:8480
+    url: http://promsketch-dropin:9100
     isDefault: true
     jsonData:
       httpMethod: POST
