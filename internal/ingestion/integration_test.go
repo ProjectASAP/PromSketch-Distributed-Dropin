@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,12 +21,21 @@ import (
 
 // mockBackend for testing
 type mockBackend struct {
+	mu         sync.Mutex
 	writeCalls []*prompb.WriteRequest
 }
 
 func (m *mockBackend) Write(ctx context.Context, req *prompb.WriteRequest) error {
+	m.mu.Lock()
 	m.writeCalls = append(m.writeCalls, req)
+	m.mu.Unlock()
 	return nil
+}
+
+func (m *mockBackend) GetWriteCalls() []*prompb.WriteRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.writeCalls
 }
 
 func (m *mockBackend) Query(ctx context.Context, query string, ts time.Time) (*backend.QueryResult, error) {
@@ -148,7 +158,7 @@ func TestIngestionPipeline_EndToEnd(t *testing.T) {
 	}
 
 	// Verify backend received samples
-	if len(mockBE.writeCalls) == 0 {
+	if len(mockBE.GetWriteCalls()) == 0 {
 		t.Error("Expected backend to receive write calls")
 	}
 
@@ -240,7 +250,7 @@ func TestIngestionPipeline_NonMatchingMetric(t *testing.T) {
 	}
 
 	// But backend should still receive samples
-	if len(mockBE.writeCalls) == 0 {
+	if len(mockBE.GetWriteCalls()) == 0 {
 		t.Error("Expected backend to receive write calls even for non-matching metrics")
 	}
 }

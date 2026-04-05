@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,16 +13,25 @@ import (
 
 // mockBackend implements Backend for testing
 type mockBackend struct {
+	mu         sync.Mutex
 	writeFunc  func(ctx context.Context, req *prompb.WriteRequest) error
 	writeCalls []*prompb.WriteRequest
 }
 
 func (m *mockBackend) Write(ctx context.Context, req *prompb.WriteRequest) error {
+	m.mu.Lock()
 	m.writeCalls = append(m.writeCalls, req)
+	m.mu.Unlock()
 	if m.writeFunc != nil {
 		return m.writeFunc(ctx, req)
 	}
 	return nil
+}
+
+func (m *mockBackend) GetWriteCalls() []*prompb.WriteRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.writeCalls
 }
 
 func (m *mockBackend) Query(ctx context.Context, query string, ts time.Time) (*QueryResult, error) {
@@ -77,12 +87,13 @@ func TestForwarder_Batching(t *testing.T) {
 	// Wait for batch to be sent
 	time.Sleep(100 * time.Millisecond)
 
-	if len(mock.writeCalls) != 1 {
-		t.Errorf("Expected 1 write call, got %d", len(mock.writeCalls))
+	writeCalls := mock.GetWriteCalls()
+	if len(writeCalls) != 1 {
+		t.Errorf("Expected 1 write call, got %d", len(writeCalls))
 	}
 
-	if len(mock.writeCalls) > 0 && len(mock.writeCalls[0].Timeseries) != 3 {
-		t.Errorf("Expected batch of 3, got %d", len(mock.writeCalls[0].Timeseries))
+	if len(writeCalls) > 0 && len(writeCalls[0].Timeseries) != 3 {
+		t.Errorf("Expected batch of 3, got %d", len(writeCalls[0].Timeseries))
 	}
 }
 
@@ -117,8 +128,9 @@ func TestForwarder_FlushInterval(t *testing.T) {
 	// Wait for flush interval
 	time.Sleep(200 * time.Millisecond)
 
-	if len(mock.writeCalls) != 1 {
-		t.Errorf("Expected 1 write call, got %d", len(mock.writeCalls))
+	writeCalls := mock.GetWriteCalls()
+	if len(writeCalls) != 1 {
+		t.Errorf("Expected 1 write call, got %d", len(writeCalls))
 	}
 }
 

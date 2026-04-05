@@ -76,7 +76,7 @@ func (r *Router) Insert(lbls promlabels.Labels, timestamp int64, value float64) 
 	var wg sync.WaitGroup
 	var errsMu sync.Mutex
 	var errs []error
-	successCount := 0
+	var successCount atomic.Uint32
 
 	for _, node := range nodes {
 		if !r.healthChecker.IsHealthy(node.ID) {
@@ -116,16 +116,14 @@ func (r *Router) Insert(lbls promlabels.Labels, timestamp int64, value float64) 
 			}
 
 			r.healthChecker.RecordSuccess(nodeID)
-			errsMu.Lock()
-			successCount++
-			errsMu.Unlock()
+			successCount.Add(1)
 		}(node.ID, client)
 	}
 
 	wg.Wait()
 
 	// Succeed if at least one node accepted (write quorum = 1)
-	if successCount > 0 {
+	if successCount.Load() > 0 {
 		atomic.AddUint64(&r.metrics.SamplesRouted, 1)
 		metrics.InsertRouterSamplesRoutedTotal.Inc()
 		return nil
